@@ -1,0 +1,61 @@
+{
+    "name": "rudolfbruder/laravel-snip",
+    "description": "A dd()-style snipping tool for Laravel — capture values during a request and view them on-page in an admin-only panel.",
+    "keywords": ["rudolfbruder", "laravel", "laravel-snip", "debug", "dd", "dump", "horizon-style-gate"],
+    "homepage": "https://github.com/rudolfbruder/laravel-snip",
+    "license": "MIT",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Rudolf Bruder",
+            "email": "rudolf.bruder@slovar.sk",
+            "role": "Author"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "illuminate/contracts": "^10.0|^11.0|^12.0",
+        "illuminate/http": "^10.0|^11.0|^12.0",
+        "illuminate/support": "^10.0|^11.0|^12.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "pestphp/pest": "^2.0|^3.0",
+        "pestphp/pest-plugin-laravel": "^2.0|^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "RudolfBruder\\LaravelSnip\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "RudolfBruder\\LaravelSnip\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "RudolfBruder\\LaravelSnip\\SnipServiceProvider"
+            ],
+            "aliases": {
+                "Snip": "RudolfBruder\\LaravelSnip\\Facades\\Snip"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
