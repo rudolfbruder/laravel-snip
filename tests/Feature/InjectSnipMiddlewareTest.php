@@ -26,6 +26,20 @@ beforeEach(function () {
         return response('<html><body>nothing here</body></html>')
             ->header('Content-Type', 'text/html');
     });
+
+    Route::get('/__snip-test/timing-only', function () {
+        app(SnipManager::class)->timing('checkpoint');
+
+        return response('<html><body>only timing</body></html>')
+            ->header('Content-Type', 'text/html');
+    });
+
+    Route::get('/__snip-test/milestone-only', function () {
+        app(SnipManager::class)->milestone('alpha');
+
+        return response('<html><body>only milestone</body></html>')
+            ->header('Content-Type', 'text/html');
+    });
 });
 
 it('injects the web component before </body> for HTML responses', function () {
@@ -74,7 +88,7 @@ it('does not inject when snip is disabled', function () {
     expect($response->getContent())->not->toContain('<laravel-snip');
 });
 
-it('emits a JSON-decodable payload via the data attribute', function () {
+it('emits a JSON-decodable payload via the data attribute with snips, timings, and milestones keys', function () {
     $response = $this->get('/__snip-test/html');
 
     $body = $response->getContent();
@@ -86,6 +100,84 @@ it('emits a JSON-decodable payload via the data attribute', function () {
     $data = json_decode($decoded, true);
 
     expect($data)->toBeArray()
-        ->and($data[0]['label'])->toBe('demo')
-        ->and($data[0]['value']['children'][0]['key'])->toBe('hello');
+        ->toHaveKeys(['snips', 'timings', 'milestones'])
+        ->and($data['snips'][0]['label'])->toBe('demo')
+        ->and($data['snips'][0]['value']['children'][0]['key'])->toBe('hello')
+        ->and($data['timings'])->toBe([])
+        ->and($data['milestones'])->toBe([]);
+});
+
+it('injects when only timings are present (no snips)', function () {
+    $response = $this->get('/__snip-test/timing-only');
+
+    $body = $response->getContent();
+
+    expect($body)->toContain('<laravel-snip data-payload=');
+
+    preg_match('/<laravel-snip data-payload="([^"]*)"/', $body, $match);
+    $decoded = html_entity_decode($match[1], ENT_QUOTES, 'UTF-8');
+    $data = json_decode($decoded, true);
+
+    expect($data['snips'])->toBe([])
+        ->and($data['timings'])->toHaveCount(1)
+        ->and($data['timings'][0]['label'])->toBe('checkpoint')
+        ->and($data['timings'][0]['duration_ms'])->toBeNumeric()
+        ->and($data['milestones'])->toBe([]);
+});
+
+it('injects when only milestones are present (no snips, no timings)', function () {
+    $response = $this->get('/__snip-test/milestone-only');
+
+    $body = $response->getContent();
+
+    expect($body)->toContain('<laravel-snip data-payload=');
+
+    preg_match('/<laravel-snip data-payload="([^"]*)"/', $body, $match);
+    $decoded = html_entity_decode($match[1], ENT_QUOTES, 'UTF-8');
+    $data = json_decode($decoded, true);
+
+    expect($data['snips'])->toBe([])
+        ->and($data['timings'])->toBe([])
+        ->and($data['milestones'])->toHaveCount(1)
+        ->and($data['milestones'][0]['label'])->toBe('alpha')
+        ->and($data['milestones'][0]['time_ms'])->toBeNumeric();
+});
+
+it('exposes the datalayer flag (true by default) in the payload config', function () {
+    $response = $this->get('/__snip-test/html');
+
+    preg_match('/<laravel-snip data-payload="([^"]*)"/', $response->getContent(), $match);
+    $data = json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true);
+
+    expect($data['config']['datalayer'])->toBeTrue();
+});
+
+it('exposes the datalayer flag as false when disabled', function () {
+    config()->set('snip.datalayer', false);
+
+    $response = $this->get('/__snip-test/html');
+
+    preg_match('/<laravel-snip data-payload="([^"]*)"/', $response->getContent(), $match);
+    $data = json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true);
+
+    expect($data['config']['datalayer'])->toBeFalse();
+});
+
+it('forces private no-store cache headers when injecting', function () {
+    $response = $this->get('/__snip-test/html');
+
+    $cacheControl = $response->headers->get('Cache-Control');
+
+    expect($cacheControl)->toContain('private')
+        ->and($cacheControl)->toContain('no-store')
+        ->and($response->headers->get('Pragma'))->toBe('no-cache')
+        ->and($response->headers->get('Vary'))->toContain('Cookie');
+});
+
+it('does not touch cache headers when not injecting', function () {
+    Gate::define('viewSnip', fn ($user = null) => false);
+
+    $response = $this->get('/__snip-test/html');
+
+    expect($response->headers->get('Cache-Control'))->not->toContain('no-store');
 });

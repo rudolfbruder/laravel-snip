@@ -21,3 +21,28 @@ if (! function_exists('snip')) {
         return $value;
     }
 }
+
+if (! function_exists('snip_time')) {
+    /**
+     * Record an elapsed-time entry in the request's snip panel.
+     *
+     * Without a prior `Snip::start($label)` mark the elapsed time is
+     * measured from request start (`LARAVEL_START`).
+     */
+    function snip_time(string $label): SnipManager
+    {
+        return app(SnipManager::class)->timing($label);
+    }
+}
+
+if (! function_exists('snip_here')) {
+    /**
+     * Record a milestone breadcrumb in the request's snip panel.
+     *
+     * A non-fatal alternative to `dd()` for confirming a code path executed.
+     */
+    function snip_here(string $label): SnipManager
+    {
+        return app(SnipManager::class)->milestone($label);
+    }
+}

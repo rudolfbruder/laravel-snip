@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace RudolfBruder\LaravelSnip\Http\Middleware;
 
 use Closure;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
-use Illuminate\Contracts\Routing\UrlGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
@@ -16,11 +16,12 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class InjectSnip
 {
+    private static ?int $bundleMtime = null;
+
     public function __construct(
         protected SnipManager $manager,
         protected ConfigRepository $config,
         protected AuthFactory $auth,
-        protected UrlGenerator $urlGenerator,
     ) {}
 
     public function handle(Request $request, Closure $next): SymfonyResponse
@@ -41,7 +42,7 @@ class InjectSnip
             return false;
         }
 
-        if (! $this->gateAllows()) {
+        if ($this->captureCount() === 0) {
             return false;
         }
 
@@ -54,58 +55,133 @@ class InjectSnip
             return false;
         }
 
-        if ($this->manager->count() === 0) {
-            return false;
-        }
-
         $content = $response->getContent();
-        if ($content === false || $content === '' || ! str_contains($content, '</body>')) {
+        if ($content === false || ! str_contains($content, '</body>')) {
             return false;
         }
 
-        return true;
+        return $this->gateAllows();
+    }
+
+    protected function captureCount(): int
+    {
+        return $this->manager->count()
+            + $this->manager->timingsCount()
+            + $this->manager->milestonesCount();
     }
 
     protected function gateAllows(): bool
     {
-        $user = $this->auth->guard()->user();
+        return Gate::forUser($this->resolveUser())->allows('viewSnip');
+    }
 
-        return Gate::forUser($user)->allows('viewSnip');
+    protected function resolveUser(): ?Authenticatable
+    {
+        $guard = $this->config->get('snip.guard');
+
+        return $this->auth->guard($guard)->user();
     }
 
     protected function inject(Response $response): Response
     {
-        $payload = json_encode(
-            $this->manager->entries(),
-            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR
-        );
+        $payload = $this->buildPayload();
 
-        if ($payload === false) {
+        if ($payload === null) {
             return $response;
         }
 
-        $assetUrl = $this->urlGenerator->to((string) $this->config->get('snip.asset_route', '/vendor/snip/snip.js'));
+        $snippet = $this->buildSnippet($payload);
 
-        $snippet = sprintf(
-            '<laravel-snip data-payload="%s"></laravel-snip><script src="%s" defer></script>',
-            htmlspecialchars($payload, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars($assetUrl, ENT_QUOTES, 'UTF-8'),
-        );
-
-        $content = (string) $response->getContent();
+        $content = $response->getContent();
         $position = strripos($content, '</body>');
 
         if ($position === false) {
             return $response;
         }
 
-        $newContent = substr($content, 0, $position).$snippet.substr($content, $position);
-        $response->setContent($newContent);
+        $response->setContent(substr_replace($content, $snippet, $position, 0));
 
-        if ($response->headers->has('Content-Length')) {
-            $response->headers->set('Content-Length', (string) strlen($newContent));
+        // Force a private, no-store cache policy whenever we inject. This is
+        // required because the injected HTML carries captured data scoped to
+        // the gated user who triggered the request. Without this header a
+        // shared cache (Varnish, CDN, response cache) could serve the same
+        // HTML to a guest.
+        $response->headers->set('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0');
+        $response->headers->set('Pragma', 'no-cache');
+
+        $vary = $response->headers->get('Vary');
+        $varyParts = $vary ? array_map('trim', explode(',', $vary)) : [];
+        if (! in_array('Cookie', $varyParts, true)) {
+            $varyParts[] = 'Cookie';
+            $response->headers->set('Vary', implode(', ', array_filter($varyParts)));
         }
 
         return $response;
+    }
+
+    protected function buildPayload(): ?string
+    {
+        $payload = json_encode(
+            [
+                'snips' => $this->manager->entries(),
+                'timings' => $this->manager->timings(),
+                'milestones' => $this->manager->milestones(),
+                'config' => [
+                    'datalayer' => (bool) $this->config->get('snip.datalayer', true),
+                ],
+            ],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR
+        );
+
+        if ($payload === false) {
+            report(new \RuntimeException('[laravel-snip] failed to encode payload: '.json_last_error_msg()));
+
+            return null;
+        }
+
+        return $payload;
+    }
+
+    protected function buildSnippet(string $payload): string
+    {
+        return sprintf(
+            '<laravel-snip data-payload="%s"></laravel-snip><script src="%s" defer></script>',
+            e($payload),
+            e($this->assetUrl()),
+        );
+    }
+
+    protected function assetUrl(): string
+    {
+        $assetPath = (string) $this->config->get('snip.asset_path', '/vendor/snip/snip.js');
+
+        $mtime = $this->bundleMtime($assetPath);
+
+        return $mtime === null ? $assetPath : $assetPath.'?v='.$mtime;
+    }
+
+    /**
+     * Resolve the published bundle's last-modified timestamp for cache busting.
+     *
+     * Used to append `?v=<mtime>` to the script tag so browsers fetch a new
+     * `dist/snip.js` after every `vendor:publish --tag=snip-assets`. The
+     * value is memoised in a static property so persistent runtimes
+     * (Octane, queue workers) don't re-stat the file on every request.
+     * Returns null when the bundle has not been published yet — the
+     * middleware then emits the script src without a query string.
+     */
+    protected function bundleMtime(string $assetPath): ?int
+    {
+        if (self::$bundleMtime !== null) {
+            return self::$bundleMtime;
+        }
+
+        $publicPath = public_path(ltrim($assetPath, '/'));
+
+        if (! is_file($publicPath)) {
+            return null;
+        }
+
+        return self::$bundleMtime = (int) filemtime($publicPath);
     }
 }

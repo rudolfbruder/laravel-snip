@@ -8,6 +8,8 @@ use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use RudolfBruder\LaravelSnip\Console\InstallCommand;
+use RudolfBruder\LaravelSnip\Console\PublishCommand;
 use RudolfBruder\LaravelSnip\Http\Middleware\InjectSnip;
 use RudolfBruder\LaravelSnip\Support\SnipDumper;
 
@@ -17,20 +19,35 @@ class SnipServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/snip.php', 'snip');
 
-        $this->app->singleton(SnipDumper::class);
-        $this->app->singleton(SnipManager::class);
+        // scoped() resets per request, including in Octane / queue / fpm.
+        // Prevents captures from one request leaking into the next when the
+        // PHP process is long-lived.
+        $this->app->scoped(SnipDumper::class);
+        $this->app->scoped(SnipManager::class);
     }
 
     public function boot(): void
     {
         $this->registerDefaultGate();
         $this->registerMiddleware();
-        $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__.'/../config/snip.php' => config_path('snip.php'),
             ], 'snip-config');
+
+            $this->publishes([
+                __DIR__.'/../stubs/SnipServiceProvider.stub' => app_path('Providers/SnipServiceProvider.php'),
+            ], 'snip-provider');
+
+            $this->publishes([
+                __DIR__.'/../dist/snip.js' => public_path('vendor/snip/snip.js'),
+            ], 'snip-assets');
+
+            $this->commands([
+                InstallCommand::class,
+                PublishCommand::class,
+            ]);
         }
     }
 

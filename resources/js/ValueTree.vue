@@ -84,7 +84,7 @@ function toggle() {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     line-height: 1.6;
-    color: #e5e7eb;
+    color: var(--snip-text);
 }
 
 .header {
@@ -100,12 +100,12 @@ function toggle() {
 }
 
 .header.clickable:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--snip-hover);
 }
 
 .caret {
     width: 12px;
-    color: #94a3b8;
+    color: var(--snip-text-muted);
 }
 
 .caret-spacer {
@@ -114,12 +114,12 @@ function toggle() {
 }
 
 .key {
-    color: #f9fafb;
+    color: var(--snip-text-strong);
     font-weight: 600;
 }
 
 .colon {
-    color: #6b7280;
+    color: var(--snip-text-faint);
     margin-left: -4px;
 }
 
@@ -130,7 +130,7 @@ function toggle() {
 
 .type {
     margin-left: auto;
-    color: #6b7280;
+    color: var(--snip-text-faint);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -139,7 +139,7 @@ function toggle() {
 }
 
 .children {
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 1px solid var(--snip-border-soft);
     margin-left: 6px;
     padding-left: 10px;
 }

@@ -1,0 +1,32 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Providers;
+
+use Illuminate\Support\Facades\Gate;
+use RudolfBruder\LaravelSnip\SnipApplicationServiceProvider;
+
+class SnipServiceProvider extends SnipApplicationServiceProvider
+{
+    public function boot(): void
+    {
+        parent::boot();
+    }
+
+    /**
+     * Register the Snip gate.
+     *
+     * Determines which users may access the on-page snip panel in any
+     * environment. Returning true reveals captured data; returning false
+     * hides it. Customize this list for your team.
+     */
+    protected function gate(): void
+    {
+        Gate::define('viewSnip', function ($user = null) {
+            return in_array($user?->email, [
+                //
+            ], true);
+        });
+    }
+}

@@ -18,16 +18,59 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Asset route
+    | Asset path
     |--------------------------------------------------------------------------
     |
-    | Path under which the compiled web component bundle is served.
-    | The route is registered automatically by the service provider and
-    | gated behind the same Gate::define('viewSnip', ...) check.
+    | Public-relative path where the compiled web component bundle lives
+    | after `php artisan vendor:publish --tag=snip-assets`. The path is
+    | served directly by the web server from your application's public/
+    | directory; no Laravel route handles it.
     |
     */
 
-    'asset_route' => '/vendor/snip/snip.js',
+    'asset_path' => '/vendor/snip/snip.js',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Auth guard
+    |--------------------------------------------------------------------------
+    |
+    | Name of the auth guard the panel should authenticate against. Leave
+    | null to use the application's default guard. Set to a specific guard
+    | (e.g. 'employee', 'admin') if your CMS uses a non-default guard for
+    | the user that should see snip output.
+    |
+    */
+
+    'guard' => env('SNIP_GUARD'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Show memory footprint per snip
+    |--------------------------------------------------------------------------
+    |
+    | Approximate memory size (via `strlen(serialize($value))`) is captured
+    | for every snip entry and rendered next to the elapsed-time chip in
+    | the panel sidebar. Set to false (or `SNIP_SHOW_MEMORY=false`) to skip
+    | the serialization step if profiling shows it too costly.
+    |
+    */
+
+    'show_memory' => env('SNIP_SHOW_MEMORY', true),
+
+    /*
+    |--------------------------------------------------------------------------
+    | DataLayer tab
+    |--------------------------------------------------------------------------
+    |
+    | When true, the panel patches `window.dataLayer.push` and shows a fourth
+    | "DataLayer" tab listing every site-defined GTM event captured during
+    | the page's lifetime. Set to false (or `SNIP_DATALAYER=false`) to skip
+    | the patching and hide the tab entirely.
+    |
+    */
+
+    'datalayer' => env('SNIP_DATALAYER', true),
 
     /*
     |--------------------------------------------------------------------------
@@ -46,6 +89,8 @@ return [
         'max_array_items' => 200,
         'max_string_length' => 5000,
         'max_entries_per_request' => 200,
+        'max_timings_per_request' => 500,
+        'max_milestones_per_request' => 1000,
     ],
 
     /*

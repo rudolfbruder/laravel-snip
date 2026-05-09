@@ -11,7 +11,6 @@ use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection as SupportCollection;
-use ReflectionClass;
 use ReflectionFunction;
 use ReflectionObject;
 use Throwable;
@@ -19,10 +18,26 @@ use UnitEnum;
 
 class SnipDumper
 {
+    private const REDACTED_PREVIEW = '***REDACTED***';
+
     /** @var array<int, true> */
     protected array $seen = [];
 
     public function __construct(protected ConfigRepository $config) {}
+
+    /**
+     * Approximate the in-memory size of a value by measuring its serialized
+     * length. Returns null when the value cannot be serialized (closures,
+     * resources, PDO handles, etc.).
+     */
+    public function approximateSize(mixed $value): ?int
+    {
+        try {
+            return strlen(serialize($value));
+        } catch (Throwable) {
+            return null;
+        }
+    }
 
     /**
      * @return array{type: string, preview: string, children?: array<int, array>, redacted?: bool}
@@ -39,40 +54,30 @@ class SnipDumper
      */
     protected function convert(mixed $value, int $depth): array
     {
-        $maxDepth = (int) $this->config->get('snip.limits.max_depth', 6);
-
-        if ($depth > $maxDepth) {
-            return ['type' => 'truncated', 'preview' => '… max depth reached'];
+        if ($depth > $this->maxDepth()) {
+            return $this->node('truncated', '… max depth reached');
         }
 
+        // match (true) dispatches by runtime type. Order matters: more specific
+        // types come first so a Model isn't caught by the generic `is_object`
+        // arm. Each arm returns a typed tree node.
         return match (true) {
-            $value === null => ['type' => 'null', 'preview' => 'null'],
-            is_bool($value) => ['type' => 'bool', 'preview' => $value ? 'true' : 'false'],
-            is_int($value) => ['type' => 'int', 'preview' => (string) $value],
-            is_float($value) => ['type' => 'float', 'preview' => $this->formatFloat($value)],
+            $value === null => $this->node('null', 'null'),
+            is_bool($value) => $this->node('bool', $value ? 'true' : 'false'),
+            is_int($value) => $this->node('int', (string) $value),
+            is_float($value) => $this->node('float', $this->formatFloat($value)),
             is_string($value) => $this->dumpString($value),
             is_array($value) => $this->dumpArray($value, $depth),
             $value instanceof Closure => $this->dumpClosure($value),
-            $value instanceof DateTimeInterface => [
-                'type' => 'datetime',
-                'preview' => $value->format(DATE_ATOM),
-            ],
-            $value instanceof BackedEnum => [
-                'type' => 'enum',
-                'preview' => $value::class.'::'.$value->name.' ('.var_export($value->value, true).')',
-            ],
-            $value instanceof UnitEnum => [
-                'type' => 'enum',
-                'preview' => $value::class.'::'.$value->name,
-            ],
-            $value instanceof Model => $this->dumpModel($value),
-            $value instanceof EloquentCollection || $value instanceof SupportCollection => $this->dumpCollection($value, $depth),
+            $value instanceof DateTimeInterface => $this->node('datetime', $value->format(DATE_ATOM)),
+            $value instanceof BackedEnum => $this->node('enum', $value::class.'::'.$value->name.' ('.var_export($value->value, true).')'),
+            $value instanceof UnitEnum => $this->node('enum', $value::class.'::'.$value->name),
+            $value instanceof Model => $this->dumpModel($value, $depth),
+            $value instanceof EloquentCollection,
+            $value instanceof SupportCollection => $this->dumpCollection($value, $depth),
             is_object($value) => $this->dumpObject($value, $depth),
-            is_resource($value) => [
-                'type' => 'resource',
-                'preview' => 'resource('.get_resource_type($value).')',
-            ],
-            default => ['type' => 'unknown', 'preview' => gettype($value)],
+            is_resource($value) => $this->node('resource', 'resource('.get_resource_type($value).')'),
+            default => $this->node('unknown', gettype($value)),
         };
     }
 
@@ -81,14 +86,7 @@ class SnipDumper
      */
     protected function dumpString(string $value): array
     {
-        $max = (int) $this->config->get('snip.limits.max_string_length', 5000);
-        $length = mb_strlen($value);
-
-        if ($length > $max) {
-            $value = mb_substr($value, 0, $max).'… ['.($length - $max).' more chars]';
-        }
-
-        return ['type' => 'string', 'preview' => $value];
+        return $this->node('string', $this->truncateString($value));
     }
 
     /**
@@ -97,50 +95,31 @@ class SnipDumper
      */
     protected function dumpArray(array $value, int $depth): array
     {
-        $max = (int) $this->config->get('snip.limits.max_array_items', 200);
-        $count = count($value);
-        $children = [];
-        $i = 0;
-
-        foreach ($value as $key => $item) {
-            if ($i >= $max) {
-                $children[] = [
-                    'type' => 'truncated',
-                    'preview' => '… '.($count - $max).' more items',
-                ];
-                break;
-            }
-
-            $children[] = $this->wrapKey((string) $key, $item, $depth);
-            $i++;
-        }
-
-        return [
-            'type' => 'array',
-            'preview' => 'array('.$count.')',
-            'children' => $children,
-        ];
+        return $this->node(
+            'array',
+            'array('.count($value).')',
+            $this->buildChildren($value, count($value), $depth),
+        );
     }
 
     /**
      * @return array{type: string, preview: string, children: array<int, array>}
      */
-    protected function dumpModel(Model $model): array
+    protected function dumpModel(Model $model, int $depth): array
     {
-        $key = $model->getKey();
-        $preview = $model::class.($key !== null ? ' #'.$key : ' [unsaved]');
-
+        $loadedRelations = $model->getRelations();
         $children = [];
 
         foreach ($model->attributesToArray() as $attribute => $val) {
-            $children[] = $this->wrapKey($attribute, $val, 0);
+            $children[] = $this->wrapKey($attribute, $val, $depth);
         }
 
-        return [
-            'type' => 'model',
-            'preview' => $preview,
-            'children' => $children,
-        ];
+        // Already-loaded relations only — never trigger lazy loading.
+        foreach ($loadedRelations as $name => $related) {
+            $children[] = $this->wrapKey($name, $related, $depth);
+        }
+
+        return $this->node('model', $this->modelPreview($model, count($loadedRelations)), $children);
     }
 
     /**
@@ -149,26 +128,11 @@ class SnipDumper
      */
     protected function dumpCollection(EloquentCollection|SupportCollection $collection, int $depth): array
     {
-        $max = (int) $this->config->get('snip.limits.max_array_items', 200);
-        $count = $collection->count();
-        $children = [];
-        $i = 0;
-
-        foreach ($collection as $key => $item) {
-            if ($i >= $max) {
-                $children[] = ['type' => 'truncated', 'preview' => '… '.($count - $max).' more items'];
-                break;
-            }
-
-            $children[] = $this->wrapKey((string) $key, $item, $depth);
-            $i++;
-        }
-
-        return [
-            'type' => 'collection',
-            'preview' => $collection::class.'('.$count.')',
-            'children' => $children,
-        ];
+        return $this->node(
+            'collection',
+            $collection::class.'('.$collection->count().')',
+            $this->buildChildren($collection, $collection->count(), $depth),
+        );
     }
 
     /**
@@ -179,37 +143,16 @@ class SnipDumper
         $hash = spl_object_id($value);
 
         if (isset($this->seen[$hash])) {
-            return [
-                'type' => 'circular',
-                'preview' => $value::class.' [circular reference]',
-            ];
+            return $this->node('circular', $value::class.' [circular reference]');
         }
 
         $this->seen[$hash] = true;
 
-        $children = [];
-
-        try {
-            $reflection = new ReflectionObject($value);
-            foreach ($reflection->getProperties() as $property) {
-                $property->setAccessible(true);
-                if (! $property->isInitialized($value)) {
-                    continue;
-                }
-
-                $children[] = $this->wrapKey($property->getName(), $property->getValue($value), $depth);
-            }
-        } catch (Throwable $e) {
-            $children[] = ['type' => 'error', 'preview' => $e->getMessage()];
-        }
+        $children = $this->reflectProperties($value, $depth);
 
         unset($this->seen[$hash]);
 
-        return [
-            'type' => 'object',
-            'preview' => $value::class,
-            'children' => $children,
-        ];
+        return $this->node('object', $value::class, $children);
     }
 
     /**
@@ -217,16 +160,30 @@ class SnipDumper
      */
     protected function dumpClosure(Closure $closure): array
     {
-        try {
-            $reflection = new ReflectionFunction($closure);
-            $file = $reflection->getFileName() ?: '?';
-            $line = $reflection->getStartLine() ?: 0;
-            $preview = 'Closure ('.basename((string) $file).':'.$line.')';
-        } catch (Throwable) {
-            $preview = 'Closure';
+        return $this->node('closure', $this->closurePreview($closure));
+    }
+
+    /**
+     * @param  iterable<mixed, mixed>  $items
+     * @return array<int, array>
+     */
+    protected function buildChildren(iterable $items, int $total, int $depth): array
+    {
+        $max = $this->maxArrayItems();
+        $children = [];
+        $i = 0;
+
+        foreach ($items as $key => $item) {
+            if ($i >= $max) {
+                $children[] = $this->node('truncated', '… '.($total - $max).' more items');
+                break;
+            }
+
+            $children[] = $this->wrapKey((string) $key, $item, $depth);
+            $i++;
         }
 
-        return ['type' => 'closure', 'preview' => $preview];
+        return $children;
     }
 
     /**
@@ -238,7 +195,7 @@ class SnipDumper
             return [
                 'key' => $key,
                 'type' => 'redacted',
-                'preview' => '***REDACTED***',
+                'preview' => self::REDACTED_PREVIEW,
                 'redacted' => true,
             ];
         }
@@ -246,12 +203,72 @@ class SnipDumper
         return ['key' => $key] + $this->convert($value, $depth + 1);
     }
 
+    /**
+     * @return array<int, array>
+     */
+    protected function reflectProperties(object $value, int $depth): array
+    {
+        $children = [];
+
+        try {
+            foreach ((new ReflectionObject($value))->getProperties() as $property) {
+                $property->setAccessible(true);
+
+                if (! $property->isInitialized($value)) {
+                    continue;
+                }
+
+                $children[] = $this->wrapKey($property->getName(), $property->getValue($value), $depth);
+            }
+        } catch (Throwable $e) {
+            $children[] = ['type' => 'error', 'preview' => $e->getMessage()];
+        }
+
+        return $children;
+    }
+
+    protected function modelPreview(Model $model, int $relationCount): string
+    {
+        $key = $model->getKey();
+        $head = $model::class.($key !== null ? ' #'.$key : ' [unsaved]');
+
+        if ($relationCount === 0) {
+            return $head;
+        }
+
+        return $head.' ('.$relationCount.' '.($relationCount === 1 ? 'relation' : 'relations').')';
+    }
+
+    protected function closurePreview(Closure $closure): string
+    {
+        try {
+            $reflection = new ReflectionFunction($closure);
+            $file = basename((string) ($reflection->getFileName() ?: '?'));
+            $line = $reflection->getStartLine() ?: 0;
+
+            return 'Closure ('.$file.':'.$line.')';
+        } catch (Throwable) {
+            return 'Closure';
+        }
+    }
+
+    protected function truncateString(string $value): string
+    {
+        $max = $this->maxStringLength();
+        $length = mb_strlen($value);
+
+        if ($length <= $max) {
+            return $value;
+        }
+
+        return mb_substr($value, 0, $max).'… ['.($length - $max).' more chars]';
+    }
+
     protected function shouldRedact(string $key): bool
     {
-        $redacted = (array) $this->config->get('snip.redact_keys', []);
         $needle = strtolower($key);
 
-        foreach ($redacted as $candidate) {
+        foreach ((array) $this->config->get('snip.redact_keys', []) as $candidate) {
             if (strtolower((string) $candidate) === $needle) {
                 return true;
             }
@@ -262,14 +279,40 @@ class SnipDumper
 
     protected function formatFloat(float $value): string
     {
-        if (is_nan($value)) {
-            return 'NAN';
+        return match (true) {
+            is_nan($value) => 'NAN',
+            is_infinite($value) => $value > 0 ? 'INF' : '-INF',
+            default => rtrim(rtrim(sprintf('%.10F', $value), '0'), '.'),
+        };
+    }
+
+    /**
+     * @param  array<int, array>|null  $children
+     * @return array{type: string, preview: string, children?: array<int, array>}
+     */
+    protected function node(string $type, string $preview, ?array $children = null): array
+    {
+        $node = ['type' => $type, 'preview' => $preview];
+
+        if ($children !== null) {
+            $node['children'] = $children;
         }
 
-        if (is_infinite($value)) {
-            return $value > 0 ? 'INF' : '-INF';
-        }
+        return $node;
+    }
 
-        return rtrim(rtrim(sprintf('%.10F', $value), '0'), '.');
+    protected function maxDepth(): int
+    {
+        return (int) $this->config->get('snip.limits.max_depth', 6);
+    }
+
+    protected function maxArrayItems(): int
+    {
+        return (int) $this->config->get('snip.limits.max_array_items', 200);
+    }
+
+    protected function maxStringLength(): int
+    {
+        return (int) $this->config->get('snip.limits.max_string_length', 5000);
     }
 }
