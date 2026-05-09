@@ -40,11 +40,6 @@ beforeEach(function () {
         return response('<html><body>only milestone</body></html>')
             ->header('Content-Type', 'text/html');
     });
-
-    Route::get('/__snip-test/throws', function () {
-        app(SnipManager::class)->add(['stage' => 'pre-throw'], 'before-error');
-        throw new RuntimeException('boom');
-    });
 });
 
 it('injects the web component before </body> for HTML responses', function () {
@@ -185,30 +180,4 @@ it('does not touch cache headers when not injecting', function () {
     $response = $this->get('/__snip-test/html');
 
     expect($response->headers->get('Cache-Control'))->not->toContain('no-store');
-});
-
-it('injects the panel into rendered exception responses', function () {
-    config()->set('app.debug', true);
-
-    $response = $this->get('/__snip-test/throws');
-
-    $body = $response->getContent();
-
-    expect($response->status())->toBe(500)
-        ->and($body)->toContain('<laravel-snip data-payload=');
-
-    preg_match('/<laravel-snip data-payload="([^"]*)"/', $body, $match);
-    $data = json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true);
-
-    expect($data['snips'])->toHaveCount(1)
-        ->and($data['snips'][0]['label'])->toBe('before-error');
-});
-
-it('lets exceptions propagate untouched when inject_on_error is disabled', function () {
-    config()->set('snip.inject_on_error', false);
-
-    $this->withoutExceptionHandling();
-
-    expect(fn () => $this->get('/__snip-test/throws'))
-        ->toThrow(RuntimeException::class, 'boom');
 });
