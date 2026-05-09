@@ -8,11 +8,13 @@ use Closure;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use RudolfBruder\LaravelSnip\SnipManager;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Throwable;
 
 class InjectSnip
 {
@@ -22,12 +24,28 @@ class InjectSnip
         protected SnipManager $manager,
         protected ConfigRepository $config,
         protected AuthFactory $auth,
+        protected ExceptionHandler $exceptionHandler,
     ) {}
 
     public function handle(Request $request, Closure $next): SymfonyResponse
     {
-        /** @var SymfonyResponse $response */
-        $response = $next($request);
+        try {
+            /** @var SymfonyResponse $response */
+            $response = $next($request);
+        } catch (Throwable $exception) {
+            // Catch here — without this the framework's outer try/catch in
+            // Kernel converts the exception to a response that never passes
+            // through our middleware, so the panel would be missing on every
+            // 500 page. We still let the framework's ExceptionHandler do its
+            // normal report + render so the resulting HTML matches what
+            // Laravel would render on its own.
+            if (! $this->config->get('snip.inject_on_error', true)) {
+                throw $exception;
+            }
+
+            $this->exceptionHandler->report($exception);
+            $response = $this->exceptionHandler->render($request, $exception);
+        }
 
         if (! $this->shouldInject($response)) {
             return $response;

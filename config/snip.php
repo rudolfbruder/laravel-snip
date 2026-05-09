@@ -74,6 +74,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Inject on error pages
+    |--------------------------------------------------------------------------
+    |
+    | When true, exceptions raised during the request are caught by the
+    | middleware and rendered through Laravel's normal ExceptionHandler so
+    | the panel can be injected onto the 500 / 404 page. This shows whatever
+    | snips / timings / milestones were captured before the exception fired.
+    | Set to false to let exceptions propagate untouched (no panel on errors).
+    |
+    */
+
+    'inject_on_error' => env('SNIP_INJECT_ON_ERROR', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Dumper limits
     |--------------------------------------------------------------------------
     |
