@@ -12,16 +12,25 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use RudolfBruder\LaravelSnip\SnipManager;
+use RudolfBruder\LaravelSnip\Support\CacheSnapshot;
+use RudolfBruder\LaravelSnip\Support\QueueSnapshot;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class InjectSnip
 {
     private static ?int $bundleMtime = null;
 
+    /** @var array<string, mixed>|null */
+    protected ?array $cacheSnapshot = null;
+
+    protected bool $cacheSnapshotComputed = false;
+
     public function __construct(
         protected SnipManager $manager,
         protected ConfigRepository $config,
         protected AuthFactory $auth,
+        protected CacheSnapshot $cacheCollector,
+        protected QueueSnapshot $queueCollector,
     ) {}
 
     public function handle(Request $request, Closure $next): SymfonyResponse
@@ -42,10 +51,6 @@ class InjectSnip
             return false;
         }
 
-        if ($this->captureCount() === 0) {
-            return false;
-        }
-
         if (! $response instanceof Response) {
             return false;
         }
@@ -60,14 +65,41 @@ class InjectSnip
             return false;
         }
 
+        $mode = (string) $this->config->get('snip.display_mode', 'on_capture');
+
+        if ($mode !== 'always' && $this->managerCaptureCount() === 0) {
+            return false;
+        }
+
         return $this->gateAllows();
     }
 
-    protected function captureCount(): int
+    protected function managerCaptureCount(): int
     {
         return $this->manager->count()
             + $this->manager->timingsCount()
             + $this->manager->milestonesCount();
+    }
+
+    protected function cacheEnabled(): bool
+    {
+        return $this->cacheCollector->enabled();
+    }
+
+    /** @return array<string, mixed>|null */
+    protected function cacheSnapshot(): ?array
+    {
+        if ($this->cacheSnapshotComputed) {
+            return $this->cacheSnapshot;
+        }
+
+        $this->cacheSnapshotComputed = true;
+
+        if (! $this->cacheEnabled()) {
+            return $this->cacheSnapshot = null;
+        }
+
+        return $this->cacheSnapshot = $this->cacheCollector->capture();
     }
 
     protected function gateAllows(): bool
@@ -121,15 +153,33 @@ class InjectSnip
 
     protected function buildPayload(): ?string
     {
-        $payload = json_encode(
-            [
-                'snips' => $this->manager->entries(),
-                'timings' => $this->manager->timings(),
-                'milestones' => $this->manager->milestones(),
-                'config' => [
-                    'datalayer' => (bool) $this->config->get('snip.datalayer', true),
-                ],
+        $data = [
+            'snips' => $this->manager->entries(),
+            'timings' => $this->manager->timings(),
+            'milestones' => $this->manager->milestones(),
+            'config' => [
+                'datalayer' => (bool) $this->config->get('snip.datalayer', true),
+                'cache' => $this->cacheEnabled(),
+                'cache_value_url' => $this->cacheEnabled()
+                    ? '/'.trim((string) $this->config->get('snip.cache.route_prefix', '_snip'), '/').'/cache'
+                    : null,
+                'queue' => $this->queueCollector->enabled(),
+                'queue_url' => $this->queueCollector->enabled()
+                    ? '/'.trim((string) $this->config->get('snip.cache.route_prefix', '_snip'), '/').'/queue'
+                    : null,
+                'queue_driver' => $this->queueCollector->enabled() ? $this->queueCollector->activeDriver() : null,
+                'queue_supports_listing' => $this->queueCollector->enabled() && $this->queueCollector->driverSupportsListing(),
+                'queue_horizon' => $this->queueCollector->enabled() && $this->queueCollector->horizonAvailable(),
             ],
+        ];
+
+        $snapshot = $this->cacheSnapshot();
+        if ($snapshot !== null) {
+            $data['cache'] = $snapshot;
+        }
+
+        $payload = json_encode(
+            $data,
             JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR
         );
 

@@ -7,10 +7,15 @@ namespace RudolfBruder\LaravelSnip;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use RudolfBruder\LaravelSnip\Console\InstallCommand;
 use RudolfBruder\LaravelSnip\Console\PublishCommand;
+use RudolfBruder\LaravelSnip\Http\Controllers\CacheValueController;
+use RudolfBruder\LaravelSnip\Http\Controllers\QueueController;
 use RudolfBruder\LaravelSnip\Http\Middleware\InjectSnip;
+use RudolfBruder\LaravelSnip\Support\CacheSnapshot;
+use RudolfBruder\LaravelSnip\Support\QueueSnapshot;
 use RudolfBruder\LaravelSnip\Support\SnipDumper;
 
 class SnipServiceProvider extends ServiceProvider
@@ -24,12 +29,15 @@ class SnipServiceProvider extends ServiceProvider
         // PHP process is long-lived.
         $this->app->scoped(SnipDumper::class);
         $this->app->scoped(SnipManager::class);
+        $this->app->scoped(CacheSnapshot::class);
+        $this->app->scoped(QueueSnapshot::class);
     }
 
     public function boot(): void
     {
         $this->registerDefaultGate();
         $this->registerMiddleware();
+        $this->registerRoutes();
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
@@ -58,6 +66,19 @@ class SnipServiceProvider extends ServiceProvider
         }
 
         Gate::define('viewSnip', fn ($user = null): bool => $this->app->environment('local'));
+    }
+
+    protected function registerRoutes(): void
+    {
+        Route::middleware('web')
+            ->prefix((string) $this->app['config']->get('snip.cache.route_prefix', '_snip'))
+            ->group(function (): void {
+                Route::get('/cache', [CacheValueController::class, 'show'])
+                    ->name('snip.cache.show');
+
+                Route::get('/queue', [QueueController::class, 'index'])
+                    ->name('snip.queue.index');
+            });
     }
 
     protected function registerMiddleware(): void

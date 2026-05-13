@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use RudolfBruder\LaravelSnip\SnipManager;
@@ -180,4 +181,53 @@ it('does not touch cache headers when not injecting', function () {
     $response = $this->get('/__snip-test/html');
 
     expect($response->headers->get('Cache-Control'))->not->toContain('no-store');
+});
+
+it('exposes the cache snapshot in the payload when keys are present', function () {
+    config()->set('cache.default', 'array');
+    Cache::store('array')->put('alpha', 'one', 60);
+    Cache::store('array')->put('beta', 'two', 120);
+
+    $response = $this->get('/__snip-test/html');
+
+    preg_match('/<laravel-snip data-payload="([^"]*)"/', $response->getContent(), $match);
+    $data = json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true);
+
+    expect($data)->toHaveKey('cache')
+        ->and($data['cache']['driver'])->toBe('array')
+        ->and($data['cache']['supported'])->toBeTrue()
+        ->and(collect($data['cache']['keys'])->pluck('key')->all())
+        ->toEqualCanonicalizing(['alpha', 'beta'])
+        ->and($data['config']['cache'])->toBeTrue();
+});
+
+it('does not inject when only cache keys exist (manager captures required by default)', function () {
+    config()->set('cache.default', 'array');
+    Cache::store('array')->put('only-cache', 'value', 60);
+
+    $response = $this->get('/__snip-test/no-snip');
+
+    expect($response->getContent())->not->toContain('<laravel-snip');
+});
+
+it('injects on every gated response when display_mode = always', function () {
+    config()->set('snip.display_mode', 'always');
+
+    $response = $this->get('/__snip-test/no-snip');
+
+    expect($response->getContent())->toContain('<laravel-snip data-payload=');
+});
+
+it('does not expose the cache section when disabled', function () {
+    config()->set('snip.cache.enabled', false);
+    config()->set('cache.default', 'array');
+    Cache::store('array')->put('should-not-appear', 'x', 60);
+
+    $response = $this->get('/__snip-test/html');
+
+    preg_match('/<laravel-snip data-payload="([^"]*)"/', $response->getContent(), $match);
+    $data = json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true);
+
+    expect($data)->not->toHaveKey('cache')
+        ->and($data['config']['cache'])->toBeFalse();
 });

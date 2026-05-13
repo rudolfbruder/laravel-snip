@@ -14,5 +14,8 @@
         "vite": "^5.2.0",
         "vue": "^3.4.0",
         "vue-tsc": "^2.0.0"
+    },
+    "dependencies": {
+        "@vueuse/core": "^14.3.0"
     }
 }
