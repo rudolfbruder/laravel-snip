@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace RudolfBruder\LaravelSnip\Console;
 
 use Illuminate\Console\Command;
+use Symfony\Component\Process\Process;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\info;
-use function Laravel\Prompts\note;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 use function Laravel\Prompts\warning;
@@ -41,13 +41,70 @@ class InstallCommand extends Command
         if ($env === []) {
             info('No env changes needed — defaults are fine for your selections.');
         } else {
-            info('Add this block to your .env:');
-            note(implode("\n", $env));
+            $this->renderEnvBlock($env);
         }
 
         info('After every `composer update rudolfbruder/laravel-snip`, run `php artisan snip:publish` to refresh the bundle.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<int, string>  $env
+     */
+    protected function renderEnvBlock(array $env): void
+    {
+        $block = implode("\n", $env);
+        $width = max(array_map('mb_strlen', $env)) + 4;
+        $width = max($width, 30);
+        $bar = str_repeat('─', $width);
+
+        $this->newLine();
+        $this->line('  <fg=cyan>┌─ .env '.str_repeat('─', $width - 7).'┐</>');
+        foreach ($env as $line) {
+            $pad = str_repeat(' ', $width - mb_strlen($line) - 2);
+            $this->line('  <fg=cyan>│</>  <comment>'.$line.'</comment>'.$pad.'<fg=cyan>│</>');
+        }
+        $this->line('  <fg=cyan>└'.$bar.'┘</>');
+        $this->newLine();
+
+        if (confirm('Copy to clipboard?', default: true)) {
+            if ($this->copyToClipboard($block)) {
+                info('✓ Copied to clipboard — paste into .env.');
+
+                return;
+            }
+
+            warning('No clipboard tool detected (pbcopy / xclip / wl-copy / clip.exe).');
+        }
+    }
+
+    protected function copyToClipboard(string $text): bool
+    {
+        $candidates = match (PHP_OS_FAMILY) {
+            'Darwin' => [['pbcopy']],
+            'Windows' => [['clip']],
+            default => [
+                ['wl-copy'],
+                ['xclip', '-selection', 'clipboard'],
+                ['xsel', '--clipboard', '--input'],
+            ],
+        };
+
+        foreach ($candidates as $cmd) {
+            try {
+                $process = new Process($cmd);
+                $process->setInput($text);
+                $process->run();
+                if ($process->isSuccessful()) {
+                    return true;
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return false;
     }
 
     /**
