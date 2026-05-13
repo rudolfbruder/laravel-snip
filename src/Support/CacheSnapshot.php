@@ -463,11 +463,18 @@ class CacheSnapshot
 
     /**
      * Resolve the effective key prefix used for SCAN pattern building and for
-     * stripping from displayed keys. Override > store prefix > empty string.
-     * For redis we also fold in the redis connection's options.prefix (when
-     * present) because phpredis returns keys WITHOUT that prefix already
-     * stripped only when OPT_PREFIX is set via the client — and predis
-     * behaves similarly. Trailing colon variants are tolerated.
+     * stripping from displayed keys.
+     *
+     *   Override (snip.cache.prefix) > auto-detected store prefix > ''
+     *
+     * Laravel's default `cache.prefix` appends a literal `_cache_` segment
+     * (`${APP_NAME}_cache_`) which rarely appears in the real on-the-wire
+     * key — most apps either set their own clean prefix via the redis
+     * connection's `options.prefix` or wipe `cache.prefix` entirely. When
+     * the user has not provided an override we strip that trailing
+     * `_cache_` / `cache_` / `:cache:` / `cache:` segment so the panel
+     * matches what `redis-cli KEYS '*'` actually shows. Override path is
+     * never massaged — the value the user typed wins exactly.
      */
     protected function resolvePrefix(mixed $store): string
     {
@@ -476,6 +483,15 @@ class CacheSnapshot
             return $override;
         }
 
-        return method_exists($store, 'getPrefix') ? (string) $store->getPrefix() : '';
+        $detected = method_exists($store, 'getPrefix') ? (string) $store->getPrefix() : '';
+
+        return $this->stripCacheSegment($detected);
+    }
+
+    protected function stripCacheSegment(string $prefix): string
+    {
+        $stripped = preg_replace('/[_:]cache[_:]?$/i', '', $prefix);
+
+        return is_string($stripped) ? $stripped : $prefix;
     }
 }
