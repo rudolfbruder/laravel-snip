@@ -50,9 +50,6 @@ class InjectSnip
         if (! $this->config->get('snip.enabled', true)) {
             return false;
         }
-        if ($this->captureCount() === 0) {
-            return false;
-        }
 
         if (! $response instanceof Response) {
             return false;
