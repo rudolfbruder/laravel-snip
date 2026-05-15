@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace RudolfBruder\LaravelSnip;
 
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
+use Illuminate\Support\Facades\Gate;
 use RudolfBruder\LaravelSnip\Support\SnipDumper;
 
 class SnipManager
@@ -29,9 +31,12 @@ class SnipManager
 
     protected float $startedAt;
 
+    protected ?bool $capturing = null;
+
     public function __construct(
         protected ConfigRepository $config,
         protected SnipDumper $dumper,
+        protected AuthFactory $auth,
     ) {
         $this->startedAt = defined('LARAVEL_START') ? LARAVEL_START : microtime(true);
     }
@@ -58,7 +63,7 @@ class SnipManager
 
     public function start(string $label): self
     {
-        if (! $this->enabled()) {
+        if (! $this->isCapturing()) {
             return $this;
         }
 
@@ -145,6 +150,7 @@ class SnipManager
         $this->timings = [];
         $this->milestones = [];
         $this->startMarks = [];
+        $this->capturing = null;
 
         return $this;
     }
@@ -155,13 +161,34 @@ class SnipManager
     }
 
     /**
+     * Memoised per-request check that combines the config flag with the
+     * `viewSnip` gate. When false, every record method short-circuits before
+     * any backtrace, dump, or serialize runs — so non-gated users pay zero
+     * collection cost regardless of how many `snip()` calls live in app code.
+     */
+    public function isCapturing(): bool
+    {
+        if ($this->capturing !== null) {
+            return $this->capturing;
+        }
+
+        if (! $this->enabled()) {
+            return $this->capturing = false;
+        }
+
+        $user = $this->auth->guard($this->config->get('snip.guard'))->user();
+
+        return $this->capturing = Gate::forUser($user)->allows('viewSnip');
+    }
+
+    /**
      * Single guard for the three "record N items per request" methods.
-     * Returns true when the manager is enabled and the per-kind cap is not yet
-     * reached.
+     * Returns true when capturing is enabled for the current user and the
+     * per-kind cap is not yet reached.
      */
     protected function canRecord(string $kind, int $currentCount, int $defaultMax): bool
     {
-        if (! $this->enabled()) {
+        if (! $this->isCapturing()) {
             return false;
         }
 

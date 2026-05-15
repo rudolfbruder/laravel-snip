@@ -22,7 +22,7 @@ class SnipServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__.'/../config/snip.php', 'snip');
+        $this->mergeConfigFrom(__DIR__ . '/../config/snip.php', 'snip');
 
         // scoped() resets per request, including in Octane / queue / fpm.
         // Prevents captures from one request leaking into the next when the
@@ -41,15 +41,15 @@ class SnipServiceProvider extends ServiceProvider
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__.'/../config/snip.php' => config_path('snip.php'),
+                __DIR__ . '/../config/snip.php' => config_path('snip.php'),
             ], 'snip-config');
 
             $this->publishes([
-                __DIR__.'/../stubs/SnipServiceProvider.stub' => app_path('Providers/SnipServiceProvider.php'),
+                __DIR__ . '/../stubs/SnipServiceProvider.stub' => app_path('Providers/SnipServiceProvider.php'),
             ], 'snip-provider');
 
             $this->publishes([
-                __DIR__.'/../dist/snip.js' => public_path('vendor/snip/snip.js'),
+                __DIR__ . '/../dist/snip.js' => public_path('vendor/snip/snip.js'),
             ], 'snip-assets');
 
             $this->commands([

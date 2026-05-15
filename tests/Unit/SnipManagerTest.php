@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Gate;
 use RudolfBruder\LaravelSnip\SnipManager;
 
 it('captures values with label and caller info', function () {
@@ -277,4 +278,75 @@ it('returns null bytes when value cannot be serialized', function () {
     $manager->add($closure, 'closure');
 
     expect($manager->entries()[0]['bytes'])->toBeNull();
+});
+
+it('records nothing when the viewSnip gate denies the current user', function () {
+    Gate::define('viewSnip', fn ($user = null): bool => false);
+
+    $manager = app(SnipManager::class)->clear();
+
+    $manager->add(['secret' => 'value'], 'entry');
+    $manager->start('block');
+    $manager->timing('block');
+    $manager->milestone('marker');
+
+    expect($manager->count())->toBe(0)
+        ->and($manager->entries())->toBe([])
+        ->and($manager->timingsCount())->toBe(0)
+        ->and($manager->timings())->toBe([])
+        ->and($manager->milestonesCount())->toBe(0)
+        ->and($manager->milestones())->toBe([]);
+});
+
+it('records normally when the viewSnip gate allows the current user', function () {
+    Gate::define('viewSnip', fn ($user = null): bool => true);
+
+    $manager = app(SnipManager::class)->clear();
+
+    $manager->add('value', 'entry');
+    $manager->timing('checkpoint');
+    $manager->milestone('marker');
+
+    expect($manager->count())->toBe(1)
+        ->and($manager->timingsCount())->toBe(1)
+        ->and($manager->milestonesCount())->toBe(1);
+});
+
+it('memoises the capturing decision across calls', function () {
+    $calls = 0;
+    Gate::define('viewSnip', function ($user = null) use (&$calls): bool {
+        $calls++;
+
+        return true;
+    });
+
+    $manager = app(SnipManager::class)->clear();
+
+    $manager->add('first');
+    $manager->add('second');
+    $manager->timing('checkpoint');
+    $manager->milestone('marker');
+
+    expect($calls)->toBe(1);
+});
+
+it('isCapturing returns false when snip.enabled is false regardless of gate', function () {
+    config()->set('snip.enabled', false);
+    Gate::define('viewSnip', fn ($user = null): bool => true);
+
+    $manager = app(SnipManager::class)->clear();
+
+    expect($manager->isCapturing())->toBeFalse();
+});
+
+it('clear resets the memoised capturing decision', function () {
+    Gate::define('viewSnip', fn ($user = null): bool => false);
+
+    $manager = app(SnipManager::class)->clear();
+    expect($manager->isCapturing())->toBeFalse();
+
+    Gate::define('viewSnip', fn ($user = null): bool => true);
+    $manager->clear();
+
+    expect($manager->isCapturing())->toBeTrue();
 });

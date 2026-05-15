@@ -50,6 +50,9 @@ class InjectSnip
         if (! $this->config->get('snip.enabled', true)) {
             return false;
         }
+        if ($this->captureCount() === 0) {
+            return false;
+        }
 
         if (! $response instanceof Response) {
             return false;
@@ -184,7 +187,7 @@ class InjectSnip
         );
 
         if ($payload === false) {
-            report(new \RuntimeException('[laravel-snip] failed to encode payload: '.json_last_error_msg()));
+            report(new \RuntimeException('[laravel-snip] failed to encode payload: ' . json_last_error_msg()));
 
             return null;
         }
@@ -207,7 +210,7 @@ class InjectSnip
 
         $mtime = $this->bundleMtime($assetPath);
 
-        return $mtime === null ? $assetPath : $assetPath.'?v='.$mtime;
+        return $mtime === null ? $assetPath : $assetPath . '?v=' . $mtime;
     }
 
     /**
