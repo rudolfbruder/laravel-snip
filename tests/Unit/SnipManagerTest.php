@@ -350,3 +350,81 @@ it('clear resets the memoised capturing decision', function () {
 
     expect($manager->isCapturing())->toBeTrue();
 });
+
+it('payload() returns entries, timings, and milestones snapshot', function () {
+    $manager = app(SnipManager::class)->clear();
+    Gate::define('viewSnip', fn ($user = null) => true);
+
+    $manager->add(['k' => 'v'], 'payload-test');
+    $manager->milestone('mark-a');
+
+    $payload = $manager->payload();
+
+    expect($payload)->toHaveKeys(['entries', 'timings', 'milestones'])
+        ->and($payload['entries'])->toHaveCount(1)
+        ->and($payload['entries'][0]['label'])->toBe('payload-test')
+        ->and($payload['milestones'])->toHaveCount(1)
+        ->and($payload['milestones'][0]['label'])->toBe('mark-a');
+});
+
+it('replay() appends entries, timings, and milestones from a payload', function () {
+    $manager = app(SnipManager::class)->clear();
+    Gate::define('viewSnip', fn ($user = null) => true);
+
+    $manager->add(['existing' => true], 'existing-entry');
+
+    $manager->replay([
+        'entries' => [['label' => 'replayed', 'file' => null, 'line' => null, 'time_ms' => 1.0, 'bytes' => null, 'value' => []]],
+        'timings' => [['label' => 'replayed-t', 'file' => null, 'line' => null, 'start_ms' => 0.0, 'duration_ms' => 5.0]],
+        'milestones' => [['label' => 'replayed-m', 'file' => null, 'line' => null, 'time_ms' => 10.0]],
+    ]);
+
+    expect($manager->entries())->toHaveCount(2)
+        ->and(collect($manager->entries())->pluck('label')->all())->toBe(['existing-entry', 'replayed'])
+        ->and($manager->timings())->toHaveCount(1)
+        ->and($manager->milestones())->toHaveCount(1);
+});
+
+it('ensureHydratedFromSession pulls and replays once per request', function () {
+    $manager = app(SnipManager::class)->clear();
+    Gate::define('viewSnip', fn ($user = null) => true);
+
+    $payload = [
+        'entries' => [['label' => 'from-session', 'file' => null, 'line' => null, 'time_ms' => 1.0, 'bytes' => null, 'value' => []]],
+        'timings' => [],
+        'milestones' => [],
+    ];
+
+    $request = \Illuminate\Http\Request::create('/');
+    $session = app('session.store');
+    $request->setLaravelSession($session);
+    $session->put(\RudolfBruder\LaravelSnip\Snip::PENDING_SESSION_KEY, $payload);
+
+    $manager->ensureHydratedFromSession($request);
+
+    expect(collect($manager->entries())->pluck('label')->all())->toBe(['from-session'])
+        ->and($session->has(\RudolfBruder\LaravelSnip\Snip::PENDING_SESSION_KEY))->toBeFalse();
+
+    // second call is a no-op even if more session data is added
+    $session->put(\RudolfBruder\LaravelSnip\Snip::PENDING_SESSION_KEY, $payload);
+    $manager->ensureHydratedFromSession($request);
+
+    expect($manager->entries())->toHaveCount(1);
+});
+
+it('ensureHydratedFromSession is a no-op when gate denies and forgets stale flash key', function () {
+    $manager = app(SnipManager::class)->clear();
+    Gate::define('viewSnip', fn ($user = null) => false);
+
+    $request = \Illuminate\Http\Request::create('/');
+    $session = app('session.store');
+    $request->setLaravelSession($session);
+    $session->put(\RudolfBruder\LaravelSnip\Snip::PENDING_SESSION_KEY, [
+        'entries' => [['label' => 'never', 'file' => null, 'line' => null, 'time_ms' => 1.0, 'bytes' => null, 'value' => []]],
+    ]);
+
+    $manager->ensureHydratedFromSession($request);
+
+    expect($manager->entries())->toBe([])
+        ->and($session->has(\RudolfBruder\LaravelSnip\Snip::PENDING_SESSION_KEY))->toBeFalse();
+});

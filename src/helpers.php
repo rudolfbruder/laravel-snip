@@ -14,9 +14,7 @@ if (! function_exists('snip')) {
      */
     function snip(mixed $value, ?string $label = null): mixed
     {
-        if (function_exists('app')) {
-            app(SnipManager::class)->add($value, $label);
-        }
+        app(SnipManager::class)->add($value, $label);
 
         return $value;
     }

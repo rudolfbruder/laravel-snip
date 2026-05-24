@@ -37,6 +37,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Carry captures across redirects / Inertia XHR responses
+    |--------------------------------------------------------------------------
+    |
+    | When true, captures recorded during a request whose response is a 3xx
+    | redirect or an Inertia XHR (JSON with the `X-Inertia` header) are
+    | flashed into the session and replayed on the next request. This is
+    | required for snip() calls made inside controllers that respond to
+    | Inertia POST/PUT/DELETE actions — without it, those captures never
+    | reach a `text/html` response and therefore never render in the panel.
+    |
+    | Only the gated user's own session is ever written to or read from
+    | (the same `viewSnip` gate that controls panel injection guards this),
+    | so unauthorized visitors cannot trigger or observe pending payloads.
+    | Set false (or `SNIP_PENDING_REDIRECTS=false`) to disable.
+    |
+    */
+
+    'pending_redirects' => env('SNIP_PENDING_REDIRECTS', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Asset path
     |--------------------------------------------------------------------------
     |

@@ -219,10 +219,12 @@ onMounted(() => {
 
     applyThemeAttribute();
     document.addEventListener('keydown', onKeydown);
+    document.addEventListener('inertia:success', onInertiaSuccess);
 });
 
 onBeforeUnmount(() => {
     document.removeEventListener('keydown', onKeydown);
+    document.removeEventListener('inertia:success', onInertiaSuccess);
     uninstallDataLayerHook?.();
     uninstallDataLayerHook = null;
     teardownResizeObserver();
@@ -241,38 +243,59 @@ function loadPayloadInto(host: HTMLElement): void {
 
     try {
         const parsed = JSON.parse(raw) as SnipPayload | SnipEntry[];
-
-        if (Array.isArray(parsed)) {
-            // v1 backwards-compat — flat snip array
-            entries.value = parsed;
-            return;
-        }
-
-        entries.value = parsed.snips ?? [];
-        timings.value = parsed.timings ?? [];
-        milestones.value = parsed.milestones ?? [];
-        dataLayerEnabled.value = parsed.config?.datalayer ?? true;
-        cacheEnabled.value = (parsed.config?.cache ?? false) && parsed.cache != null;
-        cache.value = parsed.cache ?? null;
-        cacheValueUrl.value = parsed.config?.cache_value_url ?? null;
-        queueEnabled.value = parsed.config?.queue ?? false;
-        queueUrl.value = parsed.config?.queue_url ?? null;
-        queueDriver.value = parsed.config?.queue_driver ?? null;
-        queueSupportsListing.value = parsed.config?.queue_supports_listing ?? false;
-        queueHorizon.value = parsed.config?.queue_horizon ?? false;
-
-        if (!dataLayerEnabled.value && tab.value === 'datalayer') {
-            tab.value = 'snips';
-        }
-        if (!cacheEnabled.value && tab.value === 'cache') {
-            tab.value = 'snips';
-        }
-        if (!queueEnabled.value && tab.value === 'queue') {
-            tab.value = 'snips';
-        }
+        applyParsedPayload(parsed);
     } catch (e) {
         console.error('[laravel-snip] failed to parse payload', e);
     }
+}
+
+function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined): void {
+    if (parsed == null) return;
+
+    if (Array.isArray(parsed)) {
+        // v1 backwards-compat — flat snip array
+        entries.value = parsed;
+        return;
+    }
+
+    entries.value = parsed.snips ?? [];
+    timings.value = parsed.timings ?? [];
+    milestones.value = parsed.milestones ?? [];
+    dataLayerEnabled.value = parsed.config?.datalayer ?? true;
+    cacheEnabled.value = (parsed.config?.cache ?? false) && parsed.cache != null;
+    cache.value = parsed.cache ?? null;
+    cacheValueUrl.value = parsed.config?.cache_value_url ?? null;
+    queueEnabled.value = parsed.config?.queue ?? false;
+    queueUrl.value = parsed.config?.queue_url ?? null;
+    queueDriver.value = parsed.config?.queue_driver ?? null;
+    queueSupportsListing.value = parsed.config?.queue_supports_listing ?? false;
+    queueHorizon.value = parsed.config?.queue_horizon ?? false;
+
+    if (!dataLayerEnabled.value && tab.value === 'datalayer') {
+        tab.value = 'snips';
+    }
+    if (!cacheEnabled.value && tab.value === 'cache') {
+        tab.value = 'snips';
+    }
+    if (!queueEnabled.value && tab.value === 'queue') {
+        tab.value = 'snips';
+    }
+}
+
+/**
+ * Inertia v2 dispatches `inertia:success` on the document after every
+ * successful SPA navigation, with the freshly-rendered page object on
+ * `event.detail.page`. The server-side `Inertia::share('_snip', …)` callback
+ * ships the same payload shape we get on initial HTML, so we can hydrate the
+ * panel without a full reload.
+ */
+function onInertiaSuccess(event: Event): void {
+    const detail = (event as CustomEvent).detail as { page?: { props?: Record<string, unknown> } } | undefined;
+    const next = detail?.page?.props?._snip as SnipPayload | null | undefined;
+
+    if (next == null) return;
+
+    applyParsedPayload(next);
 }
 
 function pickInitialTab(): void {

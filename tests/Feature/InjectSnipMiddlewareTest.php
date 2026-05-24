@@ -218,6 +218,89 @@ it('injects on every gated response when display_mode = always', function () {
     expect($response->getContent())->toContain('<laravel-snip data-payload=');
 });
 
+it('flashes pending captures into session on redirect responses', function () {
+    Route::middleware('web')->get('/__snip-test/redirect', function () {
+        snip(['hello' => 'redirect'], 'before-redirect');
+
+        return redirect('/__snip-test/landing');
+    });
+
+    $response = $this->get('/__snip-test/redirect');
+    $response->assertRedirect('/__snip-test/landing');
+
+    expect(session('_snip.pending'))->toBeArray()
+        ->and(session('_snip.pending')['entries'][0]['label'])->toBe('before-redirect');
+});
+
+it('does NOT flash pending captures into session on Inertia XHR responses (data shipped via Inertia share)', function () {
+    Route::middleware('web')->get('/__snip-test/inertia-xhr', function () {
+        snip(['hello' => 'inertia'], 'before-xhr');
+
+        return response()->json(['ok' => true])->header('X-Inertia', 'true');
+    });
+
+    $response = $this->get('/__snip-test/inertia-xhr');
+    $response->assertOk();
+
+    expect(session('_snip.pending'))->toBeNull();
+});
+
+it('replays pending captures from session into the final injected HTML', function () {
+    Route::middleware('web')->get('/__snip-test/redirect-source', function () {
+        snip(['carried' => 'value'], 'carried-label');
+
+        return redirect('/__snip-test/redirect-target');
+    });
+
+    Route::middleware('web')->get('/__snip-test/redirect-target', function () {
+        snip(['on' => 'landing'], 'on-landing-label');
+
+        return response('<html><body>landed</body></html>')
+            ->header('Content-Type', 'text/html');
+    });
+
+    $this->get('/__snip-test/redirect-source')->assertRedirect();
+    $response = $this->get('/__snip-test/redirect-target');
+
+    $body = $response->getContent();
+
+    preg_match('/<laravel-snip data-payload="([^"]*)"/', $body, $match);
+    $data = json_decode(html_entity_decode($match[1] ?? '', ENT_QUOTES, 'UTF-8'), true);
+
+    $labels = collect($data['snips'])->pluck('label')->all();
+
+    expect($labels)->toContain('carried-label')
+        ->and($labels)->toContain('on-landing-label');
+});
+
+it('does not flash pending captures when the gate denies', function () {
+    Gate::define('viewSnip', fn ($user = null) => false);
+
+    Route::middleware('web')->get('/__snip-test/redirect-denied', function () {
+        snip(['nope' => true], 'denied');
+
+        return redirect('/__snip-test/landing');
+    });
+
+    $this->get('/__snip-test/redirect-denied')->assertRedirect();
+
+    expect(session('_snip.pending'))->toBeNull();
+});
+
+it('does not flash pending captures when pending_redirects is disabled', function () {
+    config()->set('snip.pending_redirects', false);
+
+    Route::middleware('web')->get('/__snip-test/redirect-disabled', function () {
+        snip(['hello' => 'no-flash'], 'disabled');
+
+        return redirect('/__snip-test/landing');
+    });
+
+    $this->get('/__snip-test/redirect-disabled')->assertRedirect();
+
+    expect(session('_snip.pending'))->toBeNull();
+});
+
 it('does not expose the cache section when disabled', function () {
     config()->set('snip.cache.enabled', false);
     config()->set('cache.default', 'array');
