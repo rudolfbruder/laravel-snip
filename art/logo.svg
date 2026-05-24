@@ -25,38 +25,25 @@
     <g transform="translate(100 100)" stroke="#f1f5f9" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" fill="none">
       <circle cx="-38" cy="42" r="22"/>
       <circle cx="38" cy="42" r="22"/>
-      <line x1="-22" y1="26" x2="64" y2="-60"/>
-      <line x1="22" y1="26" x2="-64" y2="-60"/>
-      <line x1="-4" y1="6" x2="4" y2="6" stroke-width="8"/>
+      <path d="M -22 28 Q -10 16 0 6 Q 10 -4 64 -60"/>
+      <path d="M 22 28 Q 10 16 0 6 Q -10 -4 -64 -60"/>
     </g>
-    <circle cx="100" cy="106" r="4" fill="#ff2d20"/>
+    <circle cx="100" cy="106" r="4.5" fill="#ff2d20"/>
 
     <line x1="-40" y1="280" x2="240" y2="280" stroke="url(#cut)" stroke-width="3" stroke-dasharray="10 8"/>
   </g>
 
-  <g transform="translate(340 0)" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
-    <text x="0" y="180" font-size="148" font-weight="800" letter-spacing="-4" fill="#f8fafc">Snip</text>
+  <g transform="translate(340 0)" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <text x="0" y="180" font-size="148" font-weight="800" fill="#f8fafc">Snip</text>
 
     <g transform="translate(6 218)">
-      <rect x="0" y="0" width="240" height="36" rx="18" fill="#1f2937" stroke="#ff2d20" stroke-width="1.5"/>
-      <circle cx="22" cy="18" r="6" fill="#ff2d20"/>
-      <text x="40" y="25" font-size="17" font-weight="700" letter-spacing="2.5" fill="#ff2d20">BUILT FOR LARAVEL</text>
+      <rect x="0" y="0" width="220" height="36" rx="18" fill="#1f2937" stroke="#ff2d20" stroke-width="1.5"/>
+      <circle cx="20" cy="18" r="6" fill="#ff2d20"/>
+      <text x="36" y="25" font-size="16" font-weight="700" fill="#ff2d20">BUILT FOR LARAVEL</text>
     </g>
 
-    <text x="6" y="290" font-size="26" font-weight="500" letter-spacing="1" fill="#94a3b8">
-      a <tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#ff5a4e">dd()</tspan> that does not die.
+    <text x="6" y="298" font-size="28" font-weight="500" fill="#94a3b8">
+      a <tspan font-family="Menlo, Consolas, monospace" fill="#ff5a4e">dd()</tspan> that does not die.
     </text>
-
-    <g transform="translate(6 322)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#64748b">
-      <text x="0" y="0">
-        <tspan fill="#64748b">$ </tspan>
-        <tspan fill="#cbd5e1">snip</tspan>
-        <tspan fill="#64748b">(</tspan>
-        <tspan fill="#fbbf24">$order</tspan>
-        <tspan fill="#64748b">, </tspan>
-        <tspan fill="#34d399">'before-payment'</tspan>
-        <tspan fill="#64748b">);</tspan>
-      </text>
-    </g>
   </g>
 </svg>
