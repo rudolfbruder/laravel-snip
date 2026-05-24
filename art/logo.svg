@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-label="laravel-snip">
+  <title>laravel-snip</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#111c33"/>
+    </linearGradient>
+    <linearGradient id="laravelRed" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff5a4e"/>
+      <stop offset="100%" stop-color="#ff2d20"/>
+    </linearGradient>
+    <linearGradient id="cut" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ff2d20" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#ff2d20" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#ff2d20" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="360" rx="48" fill="url(#bg)"/>
+
+  <g transform="translate(80 80)">
+    <rect x="0" y="0" width="200" height="200" rx="44" fill="#111827" stroke="url(#laravelRed)" stroke-width="4"/>
+
+    <g transform="translate(100 100)" stroke="#f1f5f9" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <circle cx="-34" cy="34" r="20"/>
+      <circle cx="34" cy="34" r="20"/>
+      <line x1="-19" y1="19" x2="60" y2="-60"/>
+      <line x1="19" y1="19" x2="-60" y2="-60"/>
+    </g>
+
+    <line x1="-40" y1="280" x2="240" y2="280" stroke="url(#cut)" stroke-width="3" stroke-dasharray="10 8"/>
+  </g>
+
+  <g transform="translate(340 0)" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="0" y="180" font-size="148" font-weight="800" letter-spacing="-4" fill="#f8fafc">snip</text>
+
+    <g transform="translate(6 220)">
+      <rect x="0" y="0" width="170" height="34" rx="17" fill="#1f2937" stroke="#ff2d20" stroke-width="1.5"/>
+      <circle cx="20" cy="17" r="6" fill="#ff2d20"/>
+      <text x="36" y="24" font-size="18" font-weight="700" letter-spacing="2" fill="#ff2d20">BUILT FOR LARAVEL</text>
+    </g>
+
+    <text x="6" y="288" font-size="26" font-weight="500" letter-spacing="1" fill="#94a3b8">
+      a <tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#ff5a4e">dd()</tspan> that does not die.
+    </text>
+
+    <g transform="translate(6 320)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#64748b">
+      <text x="0" y="0">
+        <tspan fill="#64748b">$ </tspan>
+        <tspan fill="#cbd5e1">snip</tspan>
+        <tspan fill="#64748b">(</tspan>
+        <tspan fill="#fbbf24">$order</tspan>
+        <tspan fill="#64748b">, </tspan>
+        <tspan fill="#34d399">'before-payment'</tspan>
+        <tspan fill="#64748b">);</tspan>
+      </text>
+    </g>
+  </g>
+</svg>
