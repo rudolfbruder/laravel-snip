@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="art/logo.svg" alt="laravel-snip" width="640">
+  <img src="art/banner.svg" alt="laravel-snip" width="640">
 </p>
 
 # laravel-snip
