@@ -114,6 +114,54 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Guest links
+    |--------------------------------------------------------------------------
+    |
+    | Lets a user who passes the `viewSnip` gate open the panel in a browser
+    | that is not logged in. In the panel settings they create a link; whoever
+    | opens it gets a cookie that shows the panel — including the cache and
+    | queue endpoints — until the link expires (`ttl`, in minutes), is revoked,
+    | or is replaced by a new one. Only one link is active at a time, and its
+    | token is kept in the default cache store, so clearing the cache revokes
+    | it as well. Guests cannot create or revoke links themselves. Creating,
+    | opening and revoking a link are logged to the default log channel with
+    | who and from which IP — never the token itself.
+    |
+    | Set false (or `SNIP_GUEST_LINKS=false`) to switch the feature off; any
+    | existing guest cookie stops working at once.
+    |
+    */
+
+    'guest_links' => [
+        'enabled' => env('SNIP_GUEST_LINKS', true),
+        'ttl' => (int) env('SNIP_GUEST_LINK_TTL', 120),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Profiler tab
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the panel adds a "Profiler" tab with a plain-text report
+    | of where the request spent its time: lifecycle phases, every step
+    | wrapped in `app(Profiler::class)->measure($label, fn () => ...)`, and
+    | every SQL query, Redis command, cache hit/miss, outgoing HTTP call and
+    | Blade view, each tagged with the step it ran in. A copy button puts the
+    | report on the clipboard.
+    |
+    | Off by default: it listens to every query, cache and Redis event of
+    | every request (the gate is only checked when the report is shipped, as
+    | the session is not started yet when recording begins). Set
+    | `SNIP_PROFILER=true` while you investigate a slow page.
+    |
+    */
+
+    'profiler' => [
+        'enabled' => env('SNIP_PROFILER', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Cache tab
     |--------------------------------------------------------------------------
     |

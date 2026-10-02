@@ -9,6 +9,7 @@ use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use RudolfBruder\LaravelSnip\Http\Renderers\SnippetRenderer;
+use RudolfBruder\LaravelSnip\Profiler;
 use RudolfBruder\LaravelSnip\SnipManager;
 use RudolfBruder\LaravelSnip\Support\PendingPayloadStore;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
@@ -16,9 +17,10 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 /**
  * Global middleware that:
  *
- *   1. Hydrates the manager from any prior-request session flash.
- *   2. Injects the panel snippet into HTML responses (when capturing).
- *   3. Flashes the current request's captures into the session whenever
+ *   1. Arms the request's Profiler, when it is switched on.
+ *   2. Hydrates the manager from any prior-request session flash.
+ *   3. Injects the panel snippet into HTML responses (when capturing).
+ *   4. Flashes the current request's captures into the session whenever
  *      the response is a plain redirect, so the next request can render
  *      them.
  *
@@ -32,10 +34,13 @@ class InjectSnip
         protected ConfigRepository $config,
         protected SnippetRenderer $renderer,
         protected PendingPayloadStore $pendingStore,
+        protected Profiler $profiler,
     ) {}
 
     public function handle(Request $request, Closure $next): SymfonyResponse
     {
+        $this->profiler->start();
+
         /** @var SymfonyResponse $response */
         $response = $next($request);
 
@@ -76,7 +81,7 @@ class InjectSnip
 
         $mode = (string) $this->config->get('snip.display_mode', 'on_capture');
 
-        if ($mode !== 'always' && $this->captureCount() === 0) {
+        if ($mode !== 'always' && $this->captureCount() === 0 && ! $this->profiler->hasCaptures()) {
             return false;
         }
 

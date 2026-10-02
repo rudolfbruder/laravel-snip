@@ -11,6 +11,7 @@ use Illuminate\Support\ServiceProvider;
 use RudolfBruder\LaravelSnip\Console\InstallCommand;
 use RudolfBruder\LaravelSnip\Console\PublishCommand;
 use RudolfBruder\LaravelSnip\Http\Controllers\CacheValueController;
+use RudolfBruder\LaravelSnip\Http\Controllers\GuestLinkController;
 use RudolfBruder\LaravelSnip\Http\Controllers\QueueController;
 use RudolfBruder\LaravelSnip\Http\Middleware\InjectSnip;
 use RudolfBruder\LaravelSnip\Http\Renderers\SnippetRenderer;
@@ -19,8 +20,10 @@ use RudolfBruder\LaravelSnip\Support\BundleAssetResolver;
 use RudolfBruder\LaravelSnip\Support\CacheSnapshot;
 use RudolfBruder\LaravelSnip\Support\CallerResolver;
 use RudolfBruder\LaravelSnip\Support\CapturingDecision;
+use RudolfBruder\LaravelSnip\Support\GuestAccess;
 use RudolfBruder\LaravelSnip\Support\PayloadBuilder;
 use RudolfBruder\LaravelSnip\Support\PendingPayloadStore;
+use RudolfBruder\LaravelSnip\Support\ProfilerListeners;
 use RudolfBruder\LaravelSnip\Support\QueueSnapshot;
 use RudolfBruder\LaravelSnip\Support\SnipDumper;
 
@@ -39,6 +42,7 @@ class SnipServiceProvider extends ServiceProvider
         $this->registerMiddleware();
         $this->registerRoutes();
         $this->app->make(InertiaIntegration::class)->register();
+        $this->registerProfiler();
 
         if ($this->app->runningInConsole()) {
             $this->registerPublishing();
@@ -55,15 +59,24 @@ class SnipServiceProvider extends ServiceProvider
     {
         $this->app->scoped(SnipDumper::class);
         $this->app->scoped(SnipManager::class);
+        $this->app->scoped(Profiler::class);
         $this->app->scoped(CacheSnapshot::class);
         $this->app->scoped(QueueSnapshot::class);
         $this->app->scoped(PayloadBuilder::class);
         $this->app->scoped(CapturingDecision::class);
+        $this->app->scoped(GuestAccess::class);
         $this->app->scoped(PendingPayloadStore::class);
         $this->app->scoped(CallerResolver::class);
         $this->app->scoped(SnippetRenderer::class);
         $this->app->scoped(BundleAssetResolver::class);
         $this->app->scoped(InertiaIntegration::class);
+    }
+
+    protected function registerProfiler(): void
+    {
+        if ($this->app->make(Profiler::class)->configured()) {
+            $this->app->make(ProfilerListeners::class)->register();
+        }
     }
 
     protected function registerDefaultGate(): void
@@ -89,6 +102,10 @@ class SnipServiceProvider extends ServiceProvider
             ->group(function (): void {
                 Route::get('/cache', [CacheValueController::class, 'show'])->name('snip.cache.show');
                 Route::get('/queue', [QueueController::class, 'index'])->name('snip.queue.index');
+                Route::get('/guest-link', [GuestLinkController::class, 'show'])->name('snip.guest-link.show');
+                Route::post('/guest-link', [GuestLinkController::class, 'store'])->name('snip.guest-link.store');
+                Route::delete('/guest-link', [GuestLinkController::class, 'destroy'])->name('snip.guest-link.destroy');
+                Route::get('/guest/{token}', [GuestLinkController::class, 'enter'])->name('snip.guest.enter');
             });
     }
 

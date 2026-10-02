@@ -32,6 +32,11 @@ export type SnipMilestone = {
 
 export type SnipConfig = {
     datalayer: boolean;
+    profiler?: boolean;
+    /** The guest-link endpoint, set only for users who pass the gate itself. */
+    guest_link_url?: string | null;
+    /** True when the viewer got in through a guest link. */
+    guest?: boolean;
     cache?: boolean;
     cache_value_url?: string | null;
     queue?: boolean;
@@ -97,10 +102,43 @@ export type SnipCache = {
     message: string | null;
 };
 
+export type SnipProfileCounter = {
+    kind: string;
+    count: number;
+    ms: number;
+};
+
+export type SnipProfile = {
+    surface: string | null;
+    method: string;
+    url: string;
+    /** Null on Inertia visits, whose payload is built before the response exists. */
+    response: { status: number; bytes: number | null } | null;
+    total_ms: number;
+    peak_memory_mb: number;
+    context: Record<string, unknown> | unknown[];
+    /** `ms` is null when one of the phase's boundaries was never marked. */
+    phases: Array<{ label: string; ms: number | null }>;
+    totals: SnipProfileCounter[];
+    cache: { hit: number; miss: number; write: number };
+    steps: Array<{ label: string; depth: number; start_ms: number; duration_ms: number; counters: SnipProfileCounter[] }>;
+    calls: Array<{ kind: string; at_ms: number; ms: number; label: string; extra: string; step: string }>;
+    views: { count: number; first_at_ms: number | null; heaviest: Array<{ name: string; count: number; ms: number }> };
+    redis_keys: Array<{ key: string; count: number; ms: number }>;
+    queries: {
+        count: number;
+        slowest: Array<{ ms: number; sql: string; connection: string; step: string }>;
+        repeated: Array<{ sql: string; count: number; ms: number }>;
+    };
+    /** The same profile as plain text. */
+    text: string;
+};
+
 export type SnipPayload = {
     snips: SnipEntry[];
     timings: SnipTiming[];
     milestones: SnipMilestone[];
+    profile?: SnipProfile | null;
     cache?: SnipCache;
     config?: SnipConfig;
 };

@@ -88,6 +88,16 @@ protected function gate(): void
 
 Without an override, only `app()->environment('local')` sees the panel. Unauthorised users never receive captured data — the middleware never injects, the Inertia share callback returns `null`, and the recording API short-circuits before any backtrace or serialisation runs.
 
+### Guest links
+
+To check a page as a visitor who is not logged in (a phone, an incognito window, a colleague), open **Settings → Guest access → Create guest link** in the panel and open the copied URL in that browser. It sets a cookie and redirects to `/`; from then on that browser sees the panel too, cache and queue tabs included.
+
+- One link is active at a time. **New link** replaces it, **Revoke** removes it — either way every guest cookie stops working at once, because the cookie is only checked against the token kept in the cache.
+- Links expire after `guest_links.ttl` minutes (default `120`, `SNIP_GUEST_LINK_TTL`).
+- Guests can view but cannot create, replace or revoke links.
+- The panel shows who created the active link and when. Creating, opening and revoking a link are also logged (`info`, default log channel) with the user, IP and, for opens, the browser's user agent. The token itself is never logged — only a 12-character fingerprint to tell links apart.
+- Switch the feature off with `SNIP_GUEST_LINKS=false`.
+
 ---
 
 ## Laravel support
@@ -184,6 +194,28 @@ snip_here('admin-fallback-path');
 
 A non-fatal alternative to `dd()`. Useful for confirming a feature flag fired, a guard clause passed, or a fallback branch took over — anywhere you would have reached for `dump()` and a page reload.
 
+### Profiler
+
+Find out where a slow request spends its time. Switch it on with `SNIP_PROFILER=true`, then wrap the steps you suspect:
+
+```php
+use RudolfBruder\LaravelSnip\Profiler;
+
+$profiler = app(Profiler::class);
+$profiler->surface('category', ['categoryId' => $categoryId]); // names the request, always shows the tab
+$profiler->markControllerStarted();                              // optional: splits middleware from controller
+
+$products = $profiler->measure('load products', fn () => $repo->search($query));
+```
+
+The tab has two views. **Structured** draws the lifecycle phases as a stacked bar, every measured step as an indented waterfall with the SQL / Redis / HTTP calls made inside it, the calls filterable by kind (failed ones in red), the cache hit/miss/write counts, the heaviest Blade views, Redis keys read more than once, the slowest SQL, and SQL repeated often enough to look like an N+1 (click a query for the full statement). **Raw** shows the same profile as plain text, and the **copy** button puts that text on the clipboard. SQL, cache, Redis, outgoing `Http::` calls and Blade views are picked up from framework events automatically; record anything else (Elasticsearch, third-party SDKs) yourself:
+
+```php
+$profiler->recordCall('elastic', $durationMs, 'search products', "{$hits} hits");
+```
+
+Off by default, because once on it listens to every query and cache event of every request. Only users who pass the gate ever see the report.
+
 ### DataLayer
 
 Tees every `window.dataLayer.push(...)` call into a panel tab so GTM events are visible without opening the GTM debugger.
@@ -252,18 +284,20 @@ Most-used knobs:
 | `pending_redirects` | `true` | Flash captures across redirect chains. |
 | `redact_keys` | `[password, token, secret, …]` | Keys replaced with `***REDACTED***`. |
 | `cache.enabled` / `queue.enabled` / `datalayer` | `true` | Toggle individual tabs. |
+| `profiler.enabled` | `env('SNIP_PROFILER', false)` | Profiler tab and the event listeners behind it. |
+| `guest_links.enabled` / `guest_links.ttl` | `true` / `120` | Guest links from the settings menu, and how many minutes they last. |
 | `limits.*` | various | Depth / array / string / per-kind hard caps. |
 
 See `config/snip.php` for the full reference with inline notes.
 
 ## Security
 
-- Captures only reach users who pass the `viewSnip` gate.
+- Captures only reach users who pass the `viewSnip` gate, or browsers holding a cookie from a guest link that is still active (see [Guest links](#guest-links)). Anyone you send a guest link to sees everything the panel shows, including cache values and queue payloads, until it expires or is revoked.
 - Common credential keys auto-redacted; extend `redact_keys` for project-specific PII.
 - Injected responses are forced `Cache-Control: private, no-store` plus `Vary: Cookie` so shared caches (Varnish, CDN, response cache) cannot leak captures to other users.
 - Bundle file contains the renderer only — no captured data lives in JS.
 - The recording manager is scoped per request, so Octane and queue workers reset between requests.
-- The cache and queue lookup endpoints are gated by the same `viewSnip` ability — a guest hits `403`, not the data.
+- The cache and queue lookup endpoints are gated by the same check as the panel — a visitor without access hits `403`, not the data.
 
 ## License
 

@@ -8,8 +8,8 @@ use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-use Illuminate\Support\Facades\Gate;
 use RudolfBruder\LaravelSnip\Support\QueueSnapshot;
+use RudolfBruder\LaravelSnip\Support\CapturingDecision;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
@@ -18,6 +18,7 @@ class QueueController extends Controller
     public function __construct(
         protected QueueSnapshot $snapshot,
         protected ConfigRepository $config,
+        protected CapturingDecision $decision,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -26,7 +27,7 @@ class QueueController extends Controller
             throw new NotFoundHttpException;
         }
 
-        if (! Gate::allows('viewSnip')) {
+        if (! $this->decision->allows()) {
             return response()->json(['error' => 'forbidden'], 403);
         }
 

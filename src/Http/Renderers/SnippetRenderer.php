@@ -22,7 +22,7 @@ class SnippetRenderer
 
     public function inject(Response $response): Response
     {
-        $payload = $this->encodePayload();
+        $payload = $this->encodePayload($response);
 
         if ($payload === null) {
             return $response;
@@ -44,9 +44,9 @@ class SnippetRenderer
         return $response;
     }
 
-    protected function encodePayload(): ?string
+    protected function encodePayload(Response $response): ?string
     {
-        $data = $this->payloadBuilder->build();
+        $data = $this->payloadBuilder->build($response);
 
         if ($data === null) {
             return null;

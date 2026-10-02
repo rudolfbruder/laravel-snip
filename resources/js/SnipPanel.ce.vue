@@ -7,20 +7,22 @@ import MilestoneList from './MilestoneList.vue';
 import DataLayerList from './DataLayerList.vue';
 import CacheList from './CacheList.vue';
 import QueueList from './QueueList.vue';
-import type { DataLayerEvent, SnipCache, SnipEntry, SnipMilestone, SnipPayload, SnipTiming } from './types';
+import ProfilerReport from './ProfilerReport.vue';
+import GuestLink from './GuestLink.vue';
+import type { DataLayerEvent, SnipCache, SnipEntry, SnipMilestone, SnipPayload, SnipProfile, SnipTiming } from './types';
 import { formatBytes, shortenFile } from './format';
 import { installDataLayerHook, isCustomEvent } from './dataLayer';
 import { readStorage, writeStorage } from './storage';
 import { useTheme } from './theme';
 
-type Tab = 'snips' | 'timings' | 'milestones' | 'datalayer' | 'cache' | 'queue';
+type Tab = 'snips' | 'timings' | 'milestones' | 'profiler' | 'datalayer' | 'cache' | 'queue';
 
 const TAB_STORAGE_KEY = 'laravel-snip:tab';
 const SETTINGS_KEY = 'laravel-snip:settings';
 const OPEN_STATE_KEY = 'laravel-snip:state:open';
 const SIZE_STATE_KEY = 'laravel-snip:state:size';
 const POS_STATE_KEY = 'laravel-snip:state:pos';
-const ALL_TABS: Tab[] = ['snips', 'timings', 'milestones', 'datalayer', 'cache', 'queue'];
+const ALL_TABS: Tab[] = ['snips', 'timings', 'milestones', 'profiler', 'datalayer', 'cache', 'queue'];
 
 interface PersistSettings {
     persistOpen: boolean;
@@ -30,12 +32,18 @@ interface PersistSettings {
 
 const DEFAULT_SETTINGS: PersistSettings = {
     persistOpen: false,
-    persistSize: false,
+    persistSize: true,
     persistPos: false,
 };
 
 interface Size { w: number; h: number; }
 interface Pos { x: number; y: number; }
+
+type Edge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+const RESIZE_EDGES: Edge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+const MIN_PANEL_WIDTH = 400;
+const MIN_PANEL_HEIGHT = 240;
 
 function readJson<T>(key: string): T | null {
     try {
@@ -56,11 +64,18 @@ function writeJson(key: string, value: unknown): void {
     }
 }
 
+function removeKeys(...keys: string[]): void {
+    try {
+        if (typeof localStorage !== 'undefined') keys.forEach((key) => localStorage.removeItem(key));
+    } catch {
+        // ignore
+    }
+}
+
 const storedSettings = readJson<Partial<PersistSettings>>(SETTINGS_KEY);
 const settings = ref<PersistSettings>({ ...DEFAULT_SETTINGS, ...(storedSettings ?? {}) });
 
 const storedOpenInit = settings.value.persistOpen ? readJson<boolean>(OPEN_STATE_KEY) : null;
-const storedSizeInit = settings.value.persistSize ? readJson<Size>(SIZE_STATE_KEY) : null;
 const storedPosInit = settings.value.persistPos ? readJson<Pos>(POS_STATE_KEY) : null;
 
 const open = ref<boolean>(storedOpenInit === true);
@@ -75,6 +90,9 @@ const queueHorizon = ref<boolean>(false);
 const entries = ref<SnipEntry[]>([]);
 const timings = ref<SnipTiming[]>([]);
 const milestones = ref<SnipMilestone[]>([]);
+const profile = ref<SnipProfile | null>(null);
+const guestLinkUrl = ref<string | null>(null);
+const viewingAsGuest = ref<boolean>(false);
 const dataLayerEvents = ref<DataLayerEvent[]>([]);
 const cache = ref<SnipCache | null>(null);
 const cacheValueUrl = ref<string | null>(null);
@@ -83,6 +101,7 @@ const tab = ref<Tab>(readStorage(TAB_STORAGE_KEY, ALL_TABS) ?? 'snips');
 
 const visibleTabs = computed<Tab[]>(() =>
     ALL_TABS.filter((t) => {
+        if (t === 'profiler') return profile.value !== null;
         if (t === 'datalayer') return dataLayerEnabled.value;
         if (t === 'cache') return cacheEnabled.value;
         if (t === 'queue') return queueEnabled.value;
@@ -142,55 +161,115 @@ watch(open, (now) => {
 
 watch(settings, (s) => writeJson(SETTINGS_KEY, s), { deep: true });
 
-let resizeObserver: ResizeObserver | null = null;
-let skipFirstResize = true;
-
-function teardownResizeObserver(): void {
-    resizeObserver?.disconnect();
-    resizeObserver = null;
-}
-
-function setupResizeObserver(el: HTMLElement): void {
-    teardownResizeObserver();
-    skipFirstResize = true;
-    resizeObserver = new ResizeObserver((entries) => {
-        if (!settings.value.persistSize) return;
-        if (skipFirstResize) {
-            skipFirstResize = false;
-            return;
-        }
-        const cr = entries[0].contentRect;
-        writeJson(SIZE_STATE_KEY, { w: Math.round(cr.width), h: Math.round(cr.height) });
-    });
-    resizeObserver.observe(el);
-}
-
 watch(panelRef, async (el) => {
-    if (!el) {
-        teardownResizeObserver();
-        return;
-    }
+    if (!el) return;
     await nextTick();
-    if (settings.value.persistSize && storedSizeInit) {
-        el.style.width = `${storedSizeInit.w}px`;
-        el.style.height = `${storedSizeInit.h}px`;
+    // Read fresh rather than the value from page load: the panel unmounts on close, and a size the
+    // user resized to earlier on this page has to survive reopening it.
+    const stored = settings.value.persistSize ? readJson<Size>(SIZE_STATE_KEY) : null;
+    if (stored) {
+        el.style.width = `${stored.w}px`;
+        el.style.height = `${stored.h}px`;
     }
-    setupResizeObserver(el);
+    customSize.value = el.style.width !== '';
 });
 
 watch(() => settings.value.persistSize, (now) => {
     const el = panelRef.value;
-    if (!el) return;
-    if (now) {
-        const current = readJson<Size>(SIZE_STATE_KEY);
-        if (current) {
-            el.style.width = `${current.w}px`;
-            el.style.height = `${current.h}px`;
-        } else {
-            writeJson(SIZE_STATE_KEY, { w: Math.round(el.offsetWidth), h: Math.round(el.offsetHeight) });
-        }
+    if (!el || !now) return;
+    const current = readJson<Size>(SIZE_STATE_KEY);
+    if (current) {
+        el.style.width = `${current.w}px`;
+        el.style.height = `${current.h}px`;
+        customSize.value = true;
+    } else if (el.style.width !== '') {
+        // Only a size the user resized to is worth remembering; the default follows the viewport.
+        writeJson(SIZE_STATE_KEY, { w: el.offsetWidth, h: el.offsetHeight });
     }
 });
+
+const panelResizing = ref<boolean>(false);
+
+/** True while the panel has a size the user resized to, rather than the viewport-relative default. */
+const customSize = ref<boolean>(false);
+
+/**
+ * Resizes the panel from any edge or corner. The panel is anchored bottom-right until it is first
+ * moved, so a native `resize: both` grip would grow it away from the cursor; switching to left/top
+ * positioning on the first resize keeps the dragged edge under the pointer.
+ */
+function startResize(edge: Edge, event: PointerEvent): void {
+    const el = panelRef.value;
+    if (!el || event.button !== 0) return;
+    event.preventDefault();
+
+    const handle = event.currentTarget as HTMLElement;
+    const start = el.getBoundingClientRect();
+    const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), Math.max(max, min));
+
+    panelX.value = start.left;
+    panelY.value = start.top;
+    panelMoved.value = true;
+    panelResizing.value = true;
+    handle.setPointerCapture(event.pointerId);
+
+    const onMove = (move: PointerEvent): void => {
+        const dx = move.clientX - event.clientX;
+        const dy = move.clientY - event.clientY;
+        let { left, top, width, height } = start;
+
+        if (edge.includes('e')) width = clamp(start.width + dx, MIN_PANEL_WIDTH, window.innerWidth - start.left);
+        if (edge.includes('s')) height = clamp(start.height + dy, MIN_PANEL_HEIGHT, window.innerHeight - start.top);
+        if (edge.includes('w')) {
+            width = clamp(start.width - dx, MIN_PANEL_WIDTH, start.right);
+            left = start.right - width;
+        }
+        if (edge.includes('n')) {
+            height = clamp(start.height - dy, MIN_PANEL_HEIGHT, start.bottom);
+            top = start.bottom - height;
+        }
+
+        el.style.width = `${Math.round(width)}px`;
+        el.style.height = `${Math.round(height)}px`;
+        panelX.value = Math.round(left);
+        panelY.value = Math.round(top);
+    };
+
+    const onEnd = (): void => {
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onEnd);
+        handle.removeEventListener('pointercancel', onEnd);
+        panelResizing.value = false;
+        customSize.value = true;
+        if (settings.value.persistSize) writeJson(SIZE_STATE_KEY, { w: el.offsetWidth, h: el.offsetHeight });
+        if (settings.value.persistPos) writeJson(POS_STATE_KEY, { x: panelX.value, y: panelY.value });
+    };
+
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
+}
+
+function resetSize(): void {
+    removeKeys(SIZE_STATE_KEY);
+
+    const el = panelRef.value;
+    if (el) {
+        el.style.width = '';
+        el.style.height = '';
+    }
+    customSize.value = false;
+}
+
+function resetSettings(): void {
+    settings.value = { ...DEFAULT_SETTINGS };
+    themeMode.value = 'auto';
+    removeKeys(OPEN_STATE_KEY, POS_STATE_KEY);
+    resetSize();
+    panelMoved.value = false;
+    panelX.value = 0;
+    panelY.value = 0;
+}
 
 watch(() => settings.value.persistPos, (now) => {
     if (now && panelMoved.value) {
@@ -227,7 +306,6 @@ onBeforeUnmount(() => {
     document.removeEventListener('inertia:success', onInertiaSuccess);
     uninstallDataLayerHook?.();
     uninstallDataLayerHook = null;
-    teardownResizeObserver();
 });
 
 watch(tab, (next) => writeStorage(TAB_STORAGE_KEY, next));
@@ -261,6 +339,9 @@ function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined
     entries.value = parsed.snips ?? [];
     timings.value = parsed.timings ?? [];
     milestones.value = parsed.milestones ?? [];
+    profile.value = parsed.profile ?? null;
+    guestLinkUrl.value = parsed.config?.guest_link_url ?? null;
+    viewingAsGuest.value = parsed.config?.guest ?? false;
     dataLayerEnabled.value = parsed.config?.datalayer ?? true;
     cacheEnabled.value = (parsed.config?.cache ?? false) && parsed.cache != null;
     cache.value = parsed.cache ?? null;
@@ -271,6 +352,9 @@ function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined
     queueSupportsListing.value = parsed.config?.queue_supports_listing ?? false;
     queueHorizon.value = parsed.config?.queue_horizon ?? false;
 
+    if (profile.value === null && tab.value === 'profiler') {
+        tab.value = 'snips';
+    }
     if (!dataLayerEnabled.value && tab.value === 'datalayer') {
         tab.value = 'snips';
     }
@@ -305,6 +389,7 @@ function pickInitialTab(): void {
         ['snips', entries.value.length],
         ['timings', timings.value.length],
         ['milestones', milestones.value.length],
+        ['profiler', profile.value !== null ? 1 : 0],
         ['datalayer', dataLayerEnabled.value ? dataLayerEvents.value.filter((e) => isCustomEvent(e.payload)).length : 0],
         ['cache', cacheEnabled.value ? (cache.value?.keys.length ?? 0) : 0],
         ['queue', queueEnabled.value ? 1 : 0],
@@ -343,7 +428,7 @@ const cacheKeyCount = computed<number>(
 );
 
 const totalCount = computed<number>(
-    () => entries.value.length + timings.value.length + milestones.value.length + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0),
+    () => entries.value.length + timings.value.length + milestones.value.length + (profile.value !== null ? 1 : 0) + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0),
 );
 
 const hasContent = computed<boolean>(() => totalCount.value > 0);
@@ -352,6 +437,7 @@ const TAB_LABELS: Record<Tab, string> = {
     snips: 'Snips',
     timings: 'Timings',
     milestones: 'Milestones',
+    profiler: 'Profiler',
     datalayer: 'DataLayer',
     cache: 'Cache',
     queue: 'Queue',
@@ -366,6 +452,7 @@ function tabCount(t: Tab): number {
         snips: entries.value.length,
         timings: timings.value.length,
         milestones: milestones.value.length,
+        profiler: 0,
         datalayer: customDataLayerCount.value,
         cache: cacheKeyCount.value,
         queue: 0,
@@ -418,7 +505,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
             v-if="open"
             ref="panelRef"
             class="panel"
-            :class="{ 'panel--dragging': panelDragging }"
+            :class="{ 'panel--dragging': panelDragging, 'panel--resizing': panelResizing }"
             :style="panelStyle"
             role="dialog"
             aria-label="Laravel Snip"
@@ -444,7 +531,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                         :class="{ 'tab--active': tab === t }"
                         @click="tab = t"
                     >
-                        {{ tabLabel(t) }} <span v-if="t !== 'queue'" class="tab__badge">{{ tabCount(t) }}</span>
+                        {{ tabLabel(t) }} <span v-if="t !== 'queue' && t !== 'profiler'" class="tab__badge">{{ tabCount(t) }}</span>
                     </button>
                 </nav>
 
@@ -491,6 +578,15 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                         </label>
                         <label class="settings__row">
                             <span>Remember panel size</span>
+                            <button
+                                v-if="customSize"
+                                class="settings__row-reset"
+                                type="button"
+                                title="Back to the default size"
+                                @click.stop.prevent="resetSize"
+                            >
+                                reset
+                            </button>
                             <span class="toggle-sw">
                                 <input type="checkbox" v-model="settings.persistSize" />
                                 <span class="toggle-sw__track"><span class="toggle-sw__thumb" /></span>
@@ -503,9 +599,19 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                                 <span class="toggle-sw__track"><span class="toggle-sw__thumb" /></span>
                             </span>
                         </label>
+                        <template v-if="guestLinkUrl || viewingAsGuest">
+                            <h4 class="settings__title settings__title--gap">Guest access</h4>
+                            <GuestLink v-if="guestLinkUrl" :url="guestLinkUrl" />
+                            <p v-else class="settings__guest">You are viewing this panel through a guest link.</p>
+                        </template>
+
                         <p class="settings__note">
                             Settings and toggled state are saved in <code>localStorage</code> on this origin.
+                            Drag any edge or corner of the panel to resize it.
                         </p>
+                        <button class="settings__reset" type="button" @click="resetSettings">
+                            Reset to defaults
+                        </button>
                     </div>
                 </div>
                 <button class="close" type="button" aria-label="Close" @click="open = false">×</button>
@@ -564,6 +670,10 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                 <MilestoneList :milestones="milestones" />
             </section>
 
+            <section v-else-if="tab === 'profiler'" class="panel__scroll">
+                <ProfilerReport v-if="profile" :profile="profile" />
+            </section>
+
             <section v-else-if="tab === 'cache'" class="panel__scroll">
                 <CacheList :cache="cache" :value-url="cacheValueUrl" />
             </section>
@@ -580,6 +690,15 @@ function flashCopyState(state: 'copied' | 'failed'): void {
             <section v-else class="panel__scroll">
                 <DataLayerList :events="dataLayerEvents" />
             </section>
+
+            <span
+                v-for="edge in RESIZE_EDGES"
+                :key="edge"
+                class="resize"
+                :class="`resize--${edge}`"
+                aria-hidden="true"
+                @pointerdown="startResize(edge, $event)"
+            />
         </div>
     </div>
 </template>
@@ -721,6 +840,8 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     min-height: 240px;
     max-width: 100vw;
     max-height: 100vh;
+    /* Stored sizes are read back from offsetWidth/offsetHeight, which include the border. */
+    box-sizing: border-box;
     background: var(--snip-bg);
     border: 1px solid var(--snip-border);
     border-radius: 12px;
@@ -728,7 +849,64 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    resize: both;
+}
+
+.panel--resizing {
+    user-select: none;
+}
+
+.resize {
+    position: absolute;
+    z-index: 2;
+    touch-action: none;
+}
+
+.resize--n,
+.resize--s {
+    left: 12px;
+    right: 12px;
+    height: 6px;
+    cursor: ns-resize;
+}
+
+.resize--e,
+.resize--w {
+    top: 12px;
+    bottom: 12px;
+    width: 6px;
+    cursor: ew-resize;
+}
+
+.resize--n { top: 0; }
+.resize--s { bottom: 0; }
+.resize--e { right: 0; }
+.resize--w { left: 0; }
+
+.resize--ne,
+.resize--nw,
+.resize--se,
+.resize--sw {
+    width: 14px;
+    height: 14px;
+}
+
+.resize--nw { top: 0; left: 0; cursor: nwse-resize; }
+.resize--se { bottom: 0; right: 0; cursor: nwse-resize; }
+.resize--ne { top: 0; right: 0; cursor: nesw-resize; }
+.resize--sw { bottom: 0; left: 0; cursor: nesw-resize; }
+
+/* Grip hint in the corner the native resizer used to occupy. */
+.resize--se::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--snip-text-faint);
+    border-bottom: 2px solid var(--snip-text-faint);
+    border-bottom-right-radius: 3px;
+    opacity: 0.6;
 }
 
 .panel__header {
@@ -847,7 +1025,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
-    min-width: 240px;
+    min-width: 280px;
     background: var(--snip-surface);
     border: 1px solid var(--snip-border);
     border-radius: 8px;
@@ -918,6 +1096,23 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     cursor: pointer;
 }
 
+.settings__row-reset {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--snip-border);
+    color: var(--snip-text-muted);
+    border-radius: 6px;
+    padding: 1px 8px;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.settings__row-reset:hover {
+    background: var(--snip-surface-2);
+    color: var(--snip-text);
+}
+
 .toggle-sw {
     position: relative;
     display: inline-flex;
@@ -978,6 +1173,30 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     font-size: 11px;
     color: var(--snip-text-faint);
     line-height: 1.4;
+}
+
+.settings__guest {
+    margin: 0;
+    font-size: 11px;
+    color: var(--snip-text-muted);
+}
+
+.settings__reset {
+    margin-top: 8px;
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--snip-border);
+    color: var(--snip-text-muted);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.settings__reset:hover {
+    background: var(--snip-surface-2);
+    color: var(--snip-text);
 }
 
 .settings__note code {
