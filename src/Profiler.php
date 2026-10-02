@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RudolfBruder\LaravelSnip;
 
 use Closure;
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -75,6 +76,7 @@ class Profiler
 
     public function __construct(
         protected ConfigRepository $config,
+        protected AuthFactory $auth,
     ) {}
 
     public function configured(): bool
@@ -104,6 +106,9 @@ class Profiler
     /**
      * Names the request, so the panel shows the profile even on pages with no other captures.
      *
+     * Called first thing in a controller, so it also marks the controller start unless
+     * markControllerStarted() already did; a later call renames the request but keeps that mark.
+     *
      * @param  array<string, mixed>  $context
      */
     public function surface(string $surface, array $context = []): void
@@ -114,6 +119,7 @@ class Profiler
 
         $this->surface = $surface;
         $this->context = array_merge($this->context, $context);
+        $this->markControllerStarted();
     }
 
     /** @param  array<string, mixed>  $context */
@@ -346,6 +352,7 @@ class Profiler
         return [
             'surface' => $this->surface,
             'method' => $request->method(),
+            'user' => $this->user(),
             'url' => $request->fullUrl(),
             'response' => $response === null ? null : [
                 'status' => $response->getStatusCode(),
@@ -402,6 +409,16 @@ class Profiler
                     ->all(),
             ],
         ];
+    }
+
+    /**
+     * Who the request ran for, by id only: the report is meant to be copied around.
+     */
+    private function user(): string
+    {
+        $user = $this->auth->guard($this->config->get('snip.guard'))->user();
+
+        return $user === null ? 'guest' : 'user #'.$user->getAuthIdentifier();
     }
 
     /**
@@ -486,11 +503,12 @@ class Profiler
         $lines = [];
 
         $lines[] = sprintf(
-            '[%s] %s %s%s | total %.0f ms | peak memory %.1f MB',
+            '[%s] %s %s%s | %s | total %.0f ms | peak memory %.1f MB',
             $data['surface'] ?? 'request',
             $data['method'],
             $data['url'],
             $data['response'] === null ? '' : ' '.$data['response']['status'],
+            $data['user'],
             $data['total_ms'],
             $data['peak_memory_mb'],
         );

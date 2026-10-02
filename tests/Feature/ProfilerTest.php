@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use RudolfBruder\LaravelSnip\Facades\Snip;
 use RudolfBruder\LaravelSnip\Profiler;
 use RudolfBruder\LaravelSnip\Support\ProfilerListeners;
 
@@ -39,6 +40,14 @@ beforeEach(function () {
         });
 
         return response('<html><body>products</body></html>')->header('Content-Type', 'text/html');
+    });
+
+    Route::get('/__profiler-test/facade', function () {
+        Snip::surface('facade', ['page' => 2]);
+        Snip::measure('outer', fn () => Snip::measure('inner', fn () => DB::select('select 1')));
+        Snip::profiler()->addContext(['extra' => true]);
+
+        return response('<html><body>facade</body></html>')->header('Content-Type', 'text/html');
     });
 
     Route::get('/__profiler-test/plain', function () {
@@ -76,6 +85,18 @@ it('ships the same profile as structured data', function () {
         ->and($profile['steps'][1])->toMatchArray(['label' => 'load prices', 'depth' => 1])
         ->and($profile['cache'])->toBe(['hit' => 0, 'miss' => 1, 'write' => 0])
         ->and($profile['queries']['slowest'][0])->toMatchArray(['sql' => 'select 1', 'step' => 'load products']);
+});
+
+it('profiles through the Snip facade, marking the controller start and the viewer', function () {
+    $profile = profilerPayload($this->get('/__profiler-test/facade')->getContent())['profile'];
+
+    expect($profile['surface'])->toBe('facade')
+        ->and($profile['user'])->toBe('guest')
+        ->and($profile['context'])->toBe(['page' => 2, 'extra' => true])
+        ->and(array_column($profile['phases'], 'label'))->toContain('middleware before controller', 'controller')
+        ->and(array_column($profile['steps'], 'label'))->toBe(['outer', 'inner'])
+        ->and($profile['steps'][1]['depth'])->toBe(1)
+        ->and($profile['text'])->toContain('[facade] GET http://localhost/__profiler-test/facade 200 | guest |');
 });
 
 it('injects the panel for a profiled surface even without other captures', function () {

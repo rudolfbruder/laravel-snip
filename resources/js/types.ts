@@ -112,6 +112,8 @@ export type SnipProfile = {
     surface: string | null;
     method: string;
     url: string;
+    /** `user #<id>` or `guest`. */
+    user: string;
     /** Null on Inertia visits, whose payload is built before the response exists. */
     response: { status: number; bytes: number | null } | null;
     total_ms: number;

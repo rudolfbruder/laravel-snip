@@ -4,6 +4,15 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.2.1] - 2026-10-02
+
+### Added
+- `Snip::surface()` and `Snip::measure()` on the facade, plus `Snip::profiler()` for the rest of the profiler API.
+- Profiler reports show who the request ran for (`user #<id>` or `guest`, from `snip.guard`), so controllers no longer pass that as context.
+
+### Changed
+- `surface()` also marks the controller start unless `markControllerStarted()` already did, so the separate call is no longer needed.
+
 ## [v0.2.0] - 2026-10-02
 
 ### Added

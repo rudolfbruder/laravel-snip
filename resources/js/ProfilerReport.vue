@@ -113,6 +113,7 @@ function waterfall(startMs: number, durationMs: number): Record<string, string> 
                     <span v-if="profile.surface" class="surface">{{ profile.surface }}</span>
                     <span class="method">{{ profile.method }}</span>
                     <span class="url" :title="profile.url">{{ profile.url }}</span>
+                    <span class="user">{{ profile.user }}</span>
                     <span v-if="profile.response" class="status" :class="`status--${statusTone(profile.response.status)}`">
                         {{ profile.response.status }}
                     </span>
@@ -473,8 +474,14 @@ details[open] > summary.card__title {
     min-width: 0;
 }
 
-.status {
+.user {
     margin-left: auto;
+    flex-shrink: 0;
+    color: var(--snip-text-faint);
+    font-size: 11px;
+}
+
+.status {
     flex-shrink: 0;
     padding: 1px 8px;
     border-radius: 9999px;

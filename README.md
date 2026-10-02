@@ -199,19 +199,21 @@ A non-fatal alternative to `dd()`. Useful for confirming a feature flag fired, a
 Find out where a slow request spends its time. Switch it on with `SNIP_PROFILER=true`, then wrap the steps you suspect:
 
 ```php
-use RudolfBruder\LaravelSnip\Profiler;
+use RudolfBruder\LaravelSnip\Facades\Snip;
 
-$profiler = app(Profiler::class);
-$profiler->surface('category', ['categoryId' => $categoryId]); // names the request, always shows the tab
-$profiler->markControllerStarted();                              // optional: splits middleware from controller
+// First thing in the controller: names the request (the tab then always shows)
+// and marks where the controller starts, splitting middleware from controller time.
+Snip::surface('category', ['categoryId' => $categoryId]);
 
-$products = $profiler->measure('load products', fn () => $repo->search($query));
+$products = Snip::measure('load products', fn () => $repo->search($query));
 ```
+
+Every report also says who it ran for (`user #<id>` or `guest`). The less common calls hang off `Snip::profiler()`: `addContext()`, `measuredPipes()`, `markControllerStarted()` (to mark the start somewhere other than `surface()`), `recordCall()`.
 
 The tab has two views. **Structured** draws the lifecycle phases as a stacked bar, every measured step as an indented waterfall with the SQL / Redis / HTTP calls made inside it, the calls filterable by kind (failed ones in red), the cache hit/miss/write counts, the heaviest Blade views, Redis keys read more than once, the slowest SQL, and SQL repeated often enough to look like an N+1 (click a query for the full statement). **Raw** shows the same profile as plain text, and the **copy** button puts that text on the clipboard. SQL, cache, Redis, outgoing `Http::` calls and Blade views are picked up from framework events automatically; record anything else (Elasticsearch, third-party SDKs) yourself:
 
 ```php
-$profiler->recordCall('elastic', $durationMs, 'search products', "{$hits} hits");
+Snip::profiler()->recordCall('elastic', $durationMs, 'search products', "{$hits} hits");
 ```
 
 Off by default, because once on it listens to every query and cache event of every request. Only users who pass the gate ever see the report.

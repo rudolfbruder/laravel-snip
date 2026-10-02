@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RudolfBruder\LaravelSnip;
 
+use Closure;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Http\Request;
 use RudolfBruder\LaravelSnip\Support\CallerResolver;
@@ -45,6 +46,7 @@ class SnipManager
         protected CapturingDecision $decision,
         protected CallerResolver $callerResolver,
         protected PendingPayloadStore $pendingStore,
+        protected Profiler $profiler,
     ) {
         $this->startedAt = defined('LARAVEL_START') ? LARAVEL_START : microtime(true);
     }
@@ -117,6 +119,40 @@ class SnipManager
         ];
 
         return $this;
+    }
+
+    /**
+     * The request's profiler, for the calls without a shortcut here (addContext, recordCall,
+     * measuredPipes, markControllerStarted, ...).
+     */
+    public function profiler(): Profiler
+    {
+        return $this->profiler;
+    }
+
+    /**
+     * Names the request for the Profiler tab. See Profiler::surface().
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function surface(string $surface, array $context = []): self
+    {
+        $this->profiler->surface($surface, $context);
+
+        return $this;
+    }
+
+    /**
+     * Runs the callback as a Profiler step and returns its result. See Profiler::measure().
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    public function measure(string $label, Closure $callback): mixed
+    {
+        return $this->profiler->measure($label, $callback);
     }
 
     /** @return array<int, array{label: ?string, file: ?string, line: ?int, time_ms: float, bytes: ?int, value: array}> */
