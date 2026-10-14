@@ -4,6 +4,11 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.2.3] - 2026-10-14
+
+### Added
+- Drag the pill across the page to move it: on release it snaps to the nearest corner and saves it as the **Position** setting. A press that moves less than 5px still opens and closes the panel.
+
 ## [v0.2.2] - 2026-10-14
 
 ### Added

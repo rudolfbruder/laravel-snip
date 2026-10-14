@@ -258,6 +258,63 @@ function startResize(edge: Edge, event: PointerEvent): void {
     handle.addEventListener('pointercancel', onEnd);
 }
 
+/** Pointer travel (px) before a press on the pill counts as a drag rather than a click. */
+const PILL_DRAG_THRESHOLD = 5;
+
+const pillOffset = ref<Pos | null>(null);
+
+/** Set when a drag ends so the click the browser fires on release does not also toggle the panel. */
+let pillDragged = false;
+
+const pillTransform = computed<string | undefined>(() =>
+    pillOffset.value ? `translate(${pillOffset.value.x}px, ${pillOffset.value.y}px)` : undefined,
+);
+
+/**
+ * Drags the pill across the page; on release it snaps to the corner of the quarter of the viewport
+ * its centre is in, and that corner is saved like picking it under Settings → Position.
+ */
+function startPillDrag(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    pillDragged = false;
+
+    const pill = event.currentTarget as HTMLElement;
+
+    const onMove = (move: PointerEvent): void => {
+        const dx = move.clientX - event.clientX;
+        const dy = move.clientY - event.clientY;
+        if (!pillOffset.value && Math.hypot(dx, dy) < PILL_DRAG_THRESHOLD) return;
+        if (!pillOffset.value) pill.setPointerCapture(event.pointerId);
+        pillOffset.value = { x: dx, y: dy };
+    };
+
+    const onEnd = (): void => {
+        pill.removeEventListener('pointermove', onMove);
+        pill.removeEventListener('pointerup', onEnd);
+        pill.removeEventListener('pointercancel', onEnd);
+        if (!pillOffset.value) return;
+
+        const rect = pill.getBoundingClientRect();
+        const vertical = rect.top + rect.height / 2 < window.innerHeight / 2 ? 'top' : 'bottom';
+        const horizontal = rect.left + rect.width / 2 < window.innerWidth / 2 ? 'left' : 'right';
+        settings.value.corner = `${vertical}-${horizontal}`;
+        pillOffset.value = null;
+        pillDragged = true;
+    };
+
+    pill.addEventListener('pointermove', onMove);
+    pill.addEventListener('pointerup', onEnd);
+    pill.addEventListener('pointercancel', onEnd);
+}
+
+function onPillClick(): void {
+    if (pillDragged) {
+        pillDragged = false;
+        return;
+    }
+    open.value = !open.value;
+}
+
 function resetSize(): void {
     removeKeys(SIZE_STATE_KEY);
 
@@ -493,10 +550,12 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     <div v-if="hasContent" class="snip-root" :class="`snip-root--${settings.corner}`">
         <button
             class="toggle"
-            :class="{ 'toggle--active': open }"
+            :class="{ 'toggle--active': open, 'toggle--dragging': pillOffset }"
+            :style="{ transform: pillTransform }"
             type="button"
-            :title="open ? 'Close (Cmd+K)' : 'Open (Cmd+K)'"
-            @click="open = !open"
+            :title="`${open ? 'Close' : 'Open'} (Cmd+K) · drag to another corner`"
+            @pointerdown="startPillDrag"
+            @click="onPillClick"
         >
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="6" cy="6" r="3" />
@@ -824,6 +883,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     cursor: pointer;
     box-shadow: var(--snip-shadow-pill);
     transition: transform 0.12s ease, background 0.12s ease;
+    touch-action: none;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -833,6 +893,12 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 .toggle:hover {
     background: var(--snip-surface-3);
     transform: translateY(-1px);
+}
+
+.toggle--dragging {
+    cursor: grabbing;
+    transition: none;
+    user-select: none;
 }
 
 .toggle--active {
