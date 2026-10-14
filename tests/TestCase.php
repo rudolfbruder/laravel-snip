@@ -23,6 +23,15 @@ abstract class TestCase extends BaseTestCase
     {
         $app['config']->set('snip.enabled', true);
         $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
+
+        // Testbench 8 (Laravel 10) defaults to MySQL; later versions default to SQLite. Pin it so
+        // the profiler tests' queries run on every supported Laravel version.
+        $app['config']->set('database.default', 'testing');
+        $app['config']->set('database.connections.testing', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+        ]);
     }
 
     protected function setUp(): void
