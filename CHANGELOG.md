@@ -4,6 +4,13 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.2.4] - 2026-10-14
+
+### Changed
+- Build tooling upgraded to Vite 8 and `@vitejs/plugin-vue` 6, and the bundled Vue to 3.5.44, clearing every `npm audit` advisory (none of them reached the published bundle). Bundled libraries keep their `@license` headers.
+- Theme and Position options in the settings menu have icons: half-filled circle, sun and moon for auto, light and dark, and a screen with the chosen corner marked for each position.
+- After a drag, the pill slides from where it was dropped into its corner instead of jumping there (skipped when the browser asks for reduced motion).
+
 ## [v0.2.3] - 2026-10-14
 
 ### Added

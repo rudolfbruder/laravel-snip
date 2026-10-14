@@ -300,11 +300,32 @@ function startPillDrag(event: PointerEvent): void {
         settings.value.corner = `${vertical}-${horizontal}`;
         pillOffset.value = null;
         pillDragged = true;
+        nextTick(() => slidePillFrom(pill, rect));
     };
 
     pill.addEventListener('pointermove', onMove);
     pill.addEventListener('pointerup', onEnd);
     pill.addEventListener('pointercancel', onEnd);
+}
+
+const PILL_SLIDE_MS = 280;
+
+/**
+ * Animates the pill from where it was dropped into its new corner: it is already rendered there,
+ * so it is offset back to the drop point and eased to rest (FLIP).
+ */
+function slidePillFrom(pill: HTMLElement, from: DOMRect): void {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const to = pill.getBoundingClientRect();
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    if (dx === 0 && dy === 0) return;
+
+    pill.animate(
+        [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
+        { duration: PILL_SLIDE_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    );
 }
 
 function onPillClick(): void {
@@ -631,6 +652,17 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                                     :value="m"
                                     v-model="themeMode"
                                 />
+                                <svg class="settings__seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <template v-if="m === 'auto'">
+                                        <circle cx="12" cy="12" r="9" />
+                                        <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+                                    </template>
+                                    <template v-else-if="m === 'light'">
+                                        <circle cx="12" cy="12" r="4" />
+                                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+                                    </template>
+                                    <path v-else d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                                </svg>
                                 <span>{{ m }}</span>
                             </label>
                         </div>
@@ -649,6 +681,18 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                                     :value="c"
                                     v-model="settings.corner"
                                 />
+                                <svg class="settings__seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                                    <rect
+                                        :x="c.endsWith('left') ? 6 : 12"
+                                        :y="c.startsWith('top') ? 7 : 13"
+                                        width="6"
+                                        height="4"
+                                        rx="1"
+                                        fill="currentColor"
+                                        stroke="none"
+                                    />
+                                </svg>
                                 <span>{{ c.replace('-', ' ') }}</span>
                             </label>
                         </div>
@@ -1170,7 +1214,10 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 
 .settings__seg-btn {
     flex: 1;
-    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     padding: 4px 8px;
     font-size: 11px;
     font-weight: 600;
@@ -1179,6 +1226,12 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     border-radius: 4px;
     cursor: pointer;
     user-select: none;
+}
+
+.settings__seg-icon {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
 }
 
 .settings__seg-btn input {
