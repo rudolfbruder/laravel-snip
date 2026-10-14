@@ -24,16 +24,23 @@ const SIZE_STATE_KEY = 'laravel-snip:state:size';
 const POS_STATE_KEY = 'laravel-snip:state:pos';
 const ALL_TABS: Tab[] = ['snips', 'timings', 'milestones', 'profiler', 'datalayer', 'cache', 'queue'];
 
-interface PersistSettings {
+type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+/** Ordered to match the 2×2 picker: the top row first, then the bottom row. */
+const CORNERS: Corner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+
+interface Settings {
     persistOpen: boolean;
     persistSize: boolean;
     persistPos: boolean;
+    corner: Corner;
 }
 
-const DEFAULT_SETTINGS: PersistSettings = {
+const DEFAULT_SETTINGS: Settings = {
     persistOpen: false,
     persistSize: true,
     persistPos: false,
+    corner: 'bottom-right',
 };
 
 interface Size { w: number; h: number; }
@@ -72,8 +79,9 @@ function removeKeys(...keys: string[]): void {
     }
 }
 
-const storedSettings = readJson<Partial<PersistSettings>>(SETTINGS_KEY);
-const settings = ref<PersistSettings>({ ...DEFAULT_SETTINGS, ...(storedSettings ?? {}) });
+const storedSettings = readJson<Partial<Settings>>(SETTINGS_KEY);
+const settings = ref<Settings>({ ...DEFAULT_SETTINGS, ...(storedSettings ?? {}) });
+if (!CORNERS.includes(settings.value.corner)) settings.value.corner = DEFAULT_SETTINGS.corner;
 
 const storedOpenInit = settings.value.persistOpen ? readJson<boolean>(OPEN_STATE_KEY) : null;
 const storedPosInit = settings.value.persistPos ? readJson<Pos>(POS_STATE_KEY) : null;
@@ -194,7 +202,7 @@ const panelResizing = ref<boolean>(false);
 const customSize = ref<boolean>(false);
 
 /**
- * Resizes the panel from any edge or corner. The panel is anchored bottom-right until it is first
+ * Resizes the panel from any edge or corner. The panel is anchored to the chosen corner until it is first
  * moved, so a native `resize: both` grip would grow it away from the cursor; switching to left/top
  * positioning on the first resize keeps the dragged edge under the pointer.
  */
@@ -482,7 +490,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 </script>
 
 <template>
-    <div v-if="hasContent" class="snip-root">
+    <div v-if="hasContent" class="snip-root" :class="`snip-root--${settings.corner}`">
         <button
             class="toggle"
             :class="{ 'toggle--active': open }"
@@ -565,6 +573,24 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                                     v-model="themeMode"
                                 />
                                 <span>{{ m }}</span>
+                            </label>
+                        </div>
+
+                        <h4 class="settings__title settings__title--gap">Position</h4>
+                        <div class="settings__seg settings__seg--grid" role="radiogroup" aria-label="Position">
+                            <label
+                                v-for="c in CORNERS"
+                                :key="c"
+                                class="settings__seg-btn"
+                                :class="{ 'settings__seg-btn--active': settings.corner === c }"
+                            >
+                                <input
+                                    type="radio"
+                                    name="snip-corner"
+                                    :value="c"
+                                    v-model="settings.corner"
+                                />
+                                <span>{{ c.replace('-', ' ') }}</span>
                             </label>
                         </div>
 
@@ -764,10 +790,27 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 
 .snip-root {
     position: fixed;
-    bottom: 16px;
-    right: 16px;
     z-index: 2147483647;
 }
+
+/* The pill sits in the chosen corner and the panel opens next to it, leaving the pill uncovered. */
+.snip-root--top-left,
+.snip-root--top-right { top: 16px; }
+.snip-root--bottom-left,
+.snip-root--bottom-right { bottom: 16px; }
+.snip-root--top-left,
+.snip-root--bottom-left { left: 16px; }
+.snip-root--top-right,
+.snip-root--bottom-right { right: 16px; }
+
+.snip-root--top-left .panel,
+.snip-root--top-right .panel { top: 64px; }
+.snip-root--bottom-left .panel,
+.snip-root--bottom-right .panel { bottom: 64px; }
+.snip-root--top-left .panel,
+.snip-root--bottom-left .panel { left: 16px; }
+.snip-root--top-right .panel,
+.snip-root--bottom-right .panel { right: 16px; }
 
 .toggle {
     display: inline-flex;
@@ -832,8 +875,6 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 
 .panel {
     position: fixed;
-    bottom: 64px;
-    right: 16px;
     width: min(880px, 92vw);
     height: min(560px, 70vh);
     min-width: 400px;
@@ -1054,6 +1095,11 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     border: 1px solid var(--snip-border);
     border-radius: 6px;
     padding: 2px;
+}
+
+.settings__seg--grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
 }
 
 .settings__seg-btn {

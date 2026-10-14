@@ -4,6 +4,11 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.2.2] - 2026-10-14
+
+### Added
+- **Position** setting in the settings menu: put the pill and panel in any corner of the page (bottom-right by default), saved in `localStorage` with the other settings and restored by **Reset to defaults**.
+
 ## [v0.2.1] - 2026-10-02
 
 ### Added

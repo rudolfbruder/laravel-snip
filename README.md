@@ -122,7 +122,7 @@ Snip::timing('payment');
 Snip::milestone('payment-confirmed');
 ```
 
-Reload the page. The panel pill appears bottom-right; click it or press **Cmd+K / Ctrl+K**.
+Reload the page. The panel pill appears bottom-right (move it to another corner under **Settings → Position**); click it or press **Cmd+K / Ctrl+K**.
 
 That is the entire surface area. No bootstrapping, no middleware to register, no `<script>` tags to add — the package wires everything into the framework on install.
 
