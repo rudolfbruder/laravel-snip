@@ -1,7 +1,15 @@
 {
     "name": "rudolfbruder/laravel-snip",
     "description": "A dd()-style snipping tool for Laravel — capture values during a request and view them on-page in an admin-only panel.",
-    "keywords": ["rudolfbruder", "laravel", "laravel-snip", "debug", "dd", "dump", "horizon-style-gate"],
+    "keywords": [
+        "rudolfbruder",
+        "laravel",
+        "laravel-snip",
+        "debug",
+        "dd",
+        "dump",
+        "horizon-style-gate"
+    ],
     "homepage": "https://github.com/rudolfbruder/laravel-snip",
     "license": "MIT",
     "type": "library",
@@ -9,6 +17,11 @@
         {
             "name": "Rudolf Bruder",
             "email": "rudolf.bruder@slovar.sk",
+            "role": "Author"
+        },
+        {
+            "name": "Jaroslav Stefanec",
+            "email": "jaroslav.stefanec@naucma.sk",
             "role": "Author"
         }
     ],
