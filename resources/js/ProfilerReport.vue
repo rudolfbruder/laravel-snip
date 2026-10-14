@@ -4,12 +4,20 @@ import { useClipboard } from '@vueuse/core';
 import type { SnipProfile, SnipProfileCounter } from './types';
 import { durationColor, formatBytes } from './format';
 import { readStorage, writeStorage } from './storage';
+import UsageHint from './UsageHint.vue';
 
 const props = defineProps<{
     profile: SnipProfile;
 }>();
 
 type View = 'structured' | 'raw';
+
+const USAGE = `// First line of the controller: names the request and splits
+// middleware time from controller time
+\\Snip::surface('orders.index');
+
+// Wrap each step you suspect; returns what the closure returns
+$orders = \\Snip::measure('load orders', fn () => Order::latest()->get());`;
 
 const VIEW_STORAGE_KEY = 'laravel-snip:profiler-view';
 const VIEWS: View[] = ['structured', 'raw'];
@@ -163,6 +171,8 @@ function waterfall(startMs: number, durationMs: number): Record<string, string> 
                     <li class="chip">cache hit {{ profile.cache.hit }} / miss {{ profile.cache.miss }} / write {{ profile.cache.write }}</li>
                 </ul>
             </section>
+
+            <UsageHint v-if="!profile.steps.length" message="No measured steps on this request. SQL, cache, Redis and HTTP calls are still counted above." :code="USAGE" />
 
             <details v-if="profile.steps.length" class="card" open>
                 <summary class="card__title">Steps <span class="count">{{ profile.steps.length }}</span></summary>

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Snip Playground</title>
+    <style>
+        /*
+         * The page stands in for a host app, so it uses neutral zinc tones and a dot grid: nothing
+         * here should be mistaken for the panel, which is slate blue.
+         */
+        :root {
+            color-scheme: light dark;
+            --bg: #e4e4e7;
+            --dots: #a1a1aa;
+            --text: #18181b;
+            --muted: #52525b;
+            --card: #fafafa;
+            --border: #a1a1aa;
+            --row: #e4e4e7;
+            --chip: #d4d4d8;
+            --on: #7c3aed;
+            --on-text: #ffffff;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #18181b;
+                --dots: #3f3f46;
+                --text: #fafafa;
+                --muted: #a1a1aa;
+                --card: #27272a;
+                --border: #52525b;
+                --row: #3f3f46;
+                --chip: #3f3f46;
+                --on: #a78bfa;
+                --on-text: #18181b;
+            }
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+            color: var(--text);
+            background-color: var(--bg);
+            background-image: radial-gradient(var(--dots) 1px, transparent 1px);
+            background-size: 18px 18px;
+        }
+        main { max-width: 600px; margin: 0 auto; padding: 56px 16px 120px; }
+        .badge {
+            display: inline-block;
+            margin-bottom: 8px;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            background: var(--on);
+            color: var(--on-text);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        h1 { margin: 0 0 6px; font-size: 22px; }
+        .intro { margin: 0 0 20px; color: var(--muted); }
+        code, kbd {
+            background: var(--chip);
+            color: var(--text);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        .card {
+            background: var(--card);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--row);
+        }
+        .row__name { font-weight: 700; font-size: 15px; }
+        .row__hint { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+        .options {
+            display: inline-flex;
+            flex-shrink: 0;
+            margin-left: auto;
+            padding: 3px;
+            gap: 3px;
+            background: var(--row);
+            border-radius: 9999px;
+        }
+        .options label {
+            position: relative;
+            padding: 5px 14px;
+            border-radius: 9999px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+            cursor: pointer;
+            user-select: none;
+        }
+        .options label:hover { color: var(--text); }
+        .options input { position: absolute; opacity: 0; pointer-events: none; }
+        .options label:has(input:checked) { background: var(--on); color: var(--on-text); }
+        .options label:has(input:focus-visible) { outline: 2px solid var(--on); outline-offset: 2px; }
+        .footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 18px;
+            background: var(--row);
+            color: var(--muted);
+            font-size: 12px;
+        }
+        button {
+            flex-shrink: 0;
+            font: inherit;
+            font-weight: 600;
+            padding: 6px 14px;
+            cursor: pointer;
+            background: var(--card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        button:hover { border-color: var(--on); }
+        .note {
+            margin: 14px 0 0;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px dashed var(--border);
+            background: var(--card);
+            color: var(--muted);
+            font-size: 13px;
+        }
+        @media (max-width: 520px) {
+            .row, .footer { flex-direction: column; align-items: flex-start; }
+            .options { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <span class="badge">Playground</span>
+    <h1>Laravel Snip</h1>
+    <p class="intro">
+        This page plays the host app. It feeds the built panel (<code>dist/snip.js</code>) fake data: choose what each
+        tab gets below, then open the <strong>snip</strong> pill or press <kbd>Cmd</kbd>+<kbd>K</kbd>.
+        Run <code>npm run dev</code> and reload to see source changes.
+    </p>
+
+    <form id="controls" class="card">
+        <div class="row">
+            <span class="row__name" id="snips-label">Snips<span class="row__hint">Values captured with <code>\Snip::add()</code></span></span>
+            <div class="options" role="radiogroup" aria-labelledby="snips-label">
+                <label><input type="radio" name="snips" value="empty" checked> Empty</label>
+                <label><input type="radio" name="snips" value="filled"> Filled</label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="row__name" id="timings-label">Timings<span class="row__hint"><code>\Snip::start()</code> / <code>\Snip::timing()</code></span></span>
+            <div class="options" role="radiogroup" aria-labelledby="timings-label">
+                <label><input type="radio" name="timings" value="empty" checked> Empty</label>
+                <label><input type="radio" name="timings" value="filled"> Filled</label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="row__name" id="milestones-label">Milestones<span class="row__hint"><code>\Snip::milestone()</code></span></span>
+            <div class="options" role="radiogroup" aria-labelledby="milestones-label">
+                <label><input type="radio" name="milestones" value="empty" checked> Empty</label>
+                <label><input type="radio" name="milestones" value="filled"> Filled</label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="row__name" id="profiler-label">Profiler<span class="row__hint">Off hides the tab</span></span>
+            <div class="options" role="radiogroup" aria-labelledby="profiler-label">
+                <label><input type="radio" name="profiler" value="off"> Off</label>
+                <label><input type="radio" name="profiler" value="empty" checked> No steps</label>
+                <label><input type="radio" name="profiler" value="filled"> With steps</label>
+            </div>
+        </div>
+        <div class="footer">
+            <span>Theme, corner, size and open state are kept in <code>localStorage</code>.</span>
+            <button type="button" id="forget">Forget panel settings</button>
+        </div>
+    </form>
+
+    <p id="hidden-note" class="note" hidden>
+        Every tab is empty and the profiler is off, so the panel hides its pill, as it does in an app.
+    </p>
+</main>
+
+<script>
+    const node = (type, preview, children) => (children ? { type, preview, children } : { type, preview });
+
+    const SAMPLES = {
+        snips: [
+            {
+                label: 'order', file: 'app/Http/Controllers/OrderController.php', line: 42, time_ms: 31.4, bytes: 412,
+                value: node('model', 'App\\Models\\Order #1042', [
+                    { key: 'id', ...node('int', '1042') },
+                    { key: 'status', ...node('string', '"paid"') },
+                    { key: 'total', ...node('float', '129.9') },
+                    { key: 'card_token', type: 'redacted', preview: '[redacted]', redacted: true },
+                ]),
+            },
+            {
+                label: 'discount', file: 'app/Services/Pricing.php', line: 88, time_ms: 33.0, bytes: 24,
+                value: node('null', 'null'),
+            },
+        ],
+        timings: [
+            { label: 'search', file: 'app/Repositories/ProductRepository.php', line: 17, start_ms: 22.5, duration_ms: 41.2 },
+            { label: 'build-payload', file: 'app/Http/Controllers/OrderController.php', line: 51, start_ms: 0, duration_ms: 68.9 },
+        ],
+        milestones: [
+            { label: 'discount-applied', file: 'app/Services/Pricing.php', line: 90, time_ms: 33.1 },
+            { label: 'admin-fallback-path', file: 'app/Http/Controllers/OrderController.php', line: 60, time_ms: 70.4 },
+        ],
+    };
+
+    function profile(withSteps) {
+        const steps = withSteps
+            ? [
+                { label: 'load products', depth: 0, start_ms: 30.2, duration_ms: 38.5, counters: [{ kind: 'sql', count: 3, ms: 21.4 }] },
+                { label: 'price list', depth: 1, start_ms: 52.0, duration_ms: 9.7, counters: [{ kind: 'cache', count: 2, ms: 0.6 }] },
+            ]
+            : [];
+        return {
+            surface: withSteps ? 'orders.index' : null,
+            method: 'GET', url: '/orders', user: 'user #1',
+            response: { status: 200, bytes: 18234 },
+            total_ms: 84.2, peak_memory_mb: 24, context: {},
+            phases: [
+                { label: 'bootstrap', ms: 12.1 }, { label: 'middleware', ms: 20.4 },
+                { label: 'controller', ms: 40.3 }, { label: 'render', ms: 11.4 },
+            ],
+            totals: [{ kind: 'sql', count: 4, ms: 24.8 }],
+            cache: { hit: 2, miss: 1, write: 0 },
+            steps,
+            calls: [],
+            views: { count: 0, first_at_ms: null, heaviest: [] },
+            redis_keys: [],
+            queries: { count: 4, slowest: [], repeated: [] },
+            text: 'GET /orders  84.2 ms  (playground profile)',
+        };
+    }
+
+    const form = document.getElementById('controls');
+
+    function render() {
+        const pick = (name) => form.elements[name].value;
+        const payload = {
+            snips: pick('snips') === 'filled' ? SAMPLES.snips : [],
+            timings: pick('timings') === 'filled' ? SAMPLES.timings : [],
+            milestones: pick('milestones') === 'filled' ? SAMPLES.milestones : [],
+            profile: pick('profiler') === 'off' ? null : profile(pick('profiler') === 'filled'),
+            config: { datalayer: false },
+        };
+
+        // The panel reads its payload once on mount, so swap in a fresh element.
+        document.querySelector('laravel-snip')?.remove();
+        const el = document.createElement('laravel-snip');
+        el.setAttribute('data-payload', JSON.stringify(payload));
+        document.body.appendChild(el);
+
+        const empty = !payload.snips.length && !payload.timings.length && !payload.milestones.length && !payload.profile;
+        document.getElementById('hidden-note').hidden = !empty;
+    }
+
+    form.addEventListener('change', render);
+    document.getElementById('forget').addEventListener('click', () => {
+        Object.keys(localStorage).filter((k) => k.startsWith('laravel-snip:')).forEach((k) => localStorage.removeItem(k));
+        render();
+    });
+</script>
+<script src="../dist/snip.js"></script>
+<script>render();</script>
+</body>
+</html>

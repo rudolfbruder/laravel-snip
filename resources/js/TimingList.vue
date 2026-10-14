@@ -2,12 +2,21 @@
 import { computed, ref } from 'vue';
 import type { SnipTiming } from './types';
 import { durationColor, shortenFile } from './format';
+import UsageHint from './UsageHint.vue';
 
 const props = defineProps<{
     timings: SnipTiming[];
 }>();
 
 type SortMode = 'duration' | 'chronological';
+
+const USAGE = `// Time a block of code
+\\Snip::start('search');
+$results = $repo->search($query);
+\\Snip::timing('search');
+
+// Without start(): time since the request started
+\\Snip::timing('build-payload');`;
 
 const sortMode = ref<SortMode>('duration');
 
@@ -36,7 +45,7 @@ function toggleSort() {
 
 <template>
     <div class="wrap">
-        <div v-if="timings.length === 0" class="empty">No timings recorded.</div>
+        <UsageHint v-if="timings.length === 0" message="No timings recorded on this request." :code="USAGE" />
 
         <template v-else>
             <header class="head">
@@ -79,12 +88,6 @@ function toggleSort() {
     color: var(--snip-text);
 }
 
-.empty {
-    color: var(--snip-text-faint);
-    text-align: center;
-    padding: 28px 0;
-    font-size: 13px;
-}
 
 .head {
     display: flex;

@@ -4,6 +4,18 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.2.5] - 2026-10-14
+
+### Added
+- Empty Snips, Timings and Milestones tabs, and a Profiler tab with no measured steps, show a **Get started** card with the `\Snip::` calls to add (comments dimmed) and a **copy** button, instead of a blank area.
+- Once the panel has been dragged away from its corner, a **reset position** button appears in the panel header next to the settings gear. It puts the panel back next to the pill and forgets the dragged spot; hovering or focusing it shows a tooltip saying so.
+
+### Changed
+- The Position setting is a single row of four corner icons, styled like the Theme switch, with the chosen corner named beside the heading; it replaces the 2×2 grid of labelled buttons.
+
+### Fixed
+- Pressing the panel's drag handle while the panel sat in its corner (on first open, or after a position reset) made it jump to the top-left of the page. It now starts the drag from where it is, and a press that does not move it no longer counts as moved.
+
 ## [v0.2.4] - 2026-10-14
 
 ### Changed

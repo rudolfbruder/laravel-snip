@@ -2,10 +2,14 @@
 import { computed } from 'vue';
 import type { SnipMilestone } from './types';
 import { shortenFile } from './format';
+import UsageHint from './UsageHint.vue';
 
 const props = defineProps<{
     milestones: SnipMilestone[];
 }>();
+
+const USAGE = `// Confirms this line ran
+\\Snip::milestone('discount-applied');`;
 
 type RenderRow = SnipMilestone & {
     index: number;
@@ -24,7 +28,7 @@ const rows = computed<RenderRow[]>(() => {
 
 <template>
     <div class="wrap">
-        <div v-if="milestones.length === 0" class="empty">No milestones recorded.</div>
+        <UsageHint v-if="milestones.length === 0" message="No milestones recorded on this request." :code="USAGE" />
 
         <ul v-else class="list">
             <li v-for="row in rows" :key="row.index" class="row">
@@ -50,12 +54,6 @@ const rows = computed<RenderRow[]>(() => {
     color: var(--snip-text);
 }
 
-.empty {
-    color: var(--snip-text-faint);
-    text-align: center;
-    padding: 28px 0;
-    font-size: 13px;
-}
 
 .list {
     list-style: none;

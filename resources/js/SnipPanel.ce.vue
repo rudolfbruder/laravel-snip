@@ -9,6 +9,7 @@ import CacheList from './CacheList.vue';
 import QueueList from './QueueList.vue';
 import ProfilerReport from './ProfilerReport.vue';
 import GuestLink from './GuestLink.vue';
+import UsageHint from './UsageHint.vue';
 import type { DataLayerEvent, SnipCache, SnipEntry, SnipMilestone, SnipPayload, SnipProfile, SnipTiming } from './types';
 import { formatBytes, shortenFile } from './format';
 import { installDataLayerHook, isCustomEvent } from './dataLayer';
@@ -125,6 +126,9 @@ const settingsMenuRef = ref<HTMLElement | null>(null);
 
 const panelMoved = ref<boolean>(storedPosInit !== null);
 
+/** Where the panel was when the current drag began, to tell a drag from a plain click on the handle. */
+let dragStart: Pos | null = null;
+
 const {
     x: panelX,
     y: panelY,
@@ -133,6 +137,18 @@ const {
     handle: panelHandleRef,
     initialValue: storedPosInit ?? { x: 0, y: 0 },
     preventDefault: true,
+    // While anchored to its corner the panel is placed by CSS and x/y are stale (0,0 after a reset or
+    // on first open). Pressing the handle switches to left/top positioning, so start from where the
+    // panel really is, or it jumps to the top-left corner.
+    onStart: () => {
+        const el = panelRef.value;
+        if (el && !panelMoved.value) {
+            const rect = el.getBoundingClientRect();
+            panelX.value = rect.left;
+            panelY.value = rect.top;
+        }
+        dragStart = { x: panelX.value, y: panelY.value };
+    },
     onMove: (pos) => {
         const el = panelRef.value;
         if (!el) return;
@@ -153,6 +169,9 @@ onClickOutside(settingsMenuRef, () => { settingsOpen.value = false; });
 
 watch(panelDragging, (now, prev) => {
     if (prev && !now) {
+        const moved = dragStart === null || dragStart.x !== panelX.value || dragStart.y !== panelY.value;
+        dragStart = null;
+        if (!moved) return;
         panelMoved.value = true;
         if (settings.value.persistPos) writeJson(POS_STATE_KEY, { x: panelX.value, y: panelY.value });
     }
@@ -347,14 +366,38 @@ function resetSize(): void {
     customSize.value = false;
 }
 
-function resetSettings(): void {
-    settings.value = { ...DEFAULT_SETTINGS };
-    themeMode.value = 'auto';
-    removeKeys(OPEN_STATE_KEY, POS_STATE_KEY);
-    resetSize();
+/** Puts a dragged panel back next to the pill in the chosen corner and forgets the stored spot. */
+function resetPosition(): void {
+    removeKeys(POS_STATE_KEY);
     panelMoved.value = false;
     panelX.value = 0;
     panelY.value = 0;
+    hidePositionTip();
+}
+
+function resetSettings(): void {
+    settings.value = { ...DEFAULT_SETTINGS };
+    themeMode.value = 'auto';
+    removeKeys(OPEN_STATE_KEY);
+    resetSize();
+    resetPosition();
+}
+
+/** Delay before the reset-position tooltip shows, so it does not flash while the pointer passes over. */
+const TIP_DELAY_MS = 300;
+
+const positionTipVisible = ref<boolean>(false);
+let positionTipTimer: number | null = null;
+
+function showPositionTip(): void {
+    if (positionTipTimer !== null) clearTimeout(positionTipTimer);
+    positionTipTimer = window.setTimeout(() => (positionTipVisible.value = true), TIP_DELAY_MS);
+}
+
+function hidePositionTip(): void {
+    if (positionTipTimer !== null) clearTimeout(positionTipTimer);
+    positionTipTimer = null;
+    positionTipVisible.value = false;
 }
 
 watch(() => settings.value.persistPos, (now) => {
@@ -503,6 +546,14 @@ function isToggleCombo(event: KeyboardEvent): boolean {
 
 const THEME_MODES = ['auto', 'light', 'dark'] as const;
 
+function cornerLabel(corner: Corner): string {
+    const label = corner.replace('-', ' ');
+    return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+const SNIPS_USAGE = `// Capture any value under a label
+\\Snip::add($order, 'order');`;
+
 const activeEntry = computed<SnipEntry | null>(() => entries.value[activeIndex.value] ?? null);
 
 const customDataLayerCount = computed<number>(
@@ -623,7 +674,29 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                     </button>
                 </nav>
 
-                <div ref="settingsMenuRef" class="settings settings--push">
+                <span v-if="panelMoved" class="tip-anchor settings--push">
+                    <button
+                        class="settings__btn"
+                        type="button"
+                        aria-label="Reset panel position"
+                        aria-describedby="snip-position-reset-tip"
+                        @click="resetPosition"
+                        @mouseenter="showPositionTip"
+                        @mouseleave="hidePositionTip"
+                        @focus="showPositionTip"
+                        @blur="hidePositionTip"
+                        @keydown.esc="hidePositionTip"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="1 4 1 10 7 10" />
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                        </svg>
+                    </button>
+                    <span v-show="positionTipVisible" id="snip-position-reset-tip" class="tip" role="tooltip">
+                        Moves the panel back next to the pill in the chosen corner and forgets where you dragged it.
+                    </span>
+                </span>
+                <div ref="settingsMenuRef" class="settings" :class="{ 'settings--push': !panelMoved }">
                     <button
                         class="settings__btn"
                         type="button"
@@ -667,21 +740,26 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                             </label>
                         </div>
 
-                        <h4 class="settings__title settings__title--gap">Position</h4>
-                        <div class="settings__seg settings__seg--grid" role="radiogroup" aria-label="Position">
+                        <div class="settings__title-row">
+                            <h4 class="settings__title">Position</h4>
+                            <span class="settings__title-value">{{ cornerLabel(settings.corner) }}</span>
+                        </div>
+                        <div class="settings__seg" role="radiogroup" aria-label="Position">
                             <label
                                 v-for="c in CORNERS"
                                 :key="c"
                                 class="settings__seg-btn"
                                 :class="{ 'settings__seg-btn--active': settings.corner === c }"
+                                :title="cornerLabel(c)"
                             >
                                 <input
                                     type="radio"
                                     name="snip-corner"
                                     :value="c"
+                                    :aria-label="cornerLabel(c)"
                                     v-model="settings.corner"
                                 />
-                                <svg class="settings__seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <svg class="settings__corner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <rect x="3" y="4" width="18" height="16" rx="2" />
                                     <rect
                                         :x="c.endsWith('left') ? 6 : 12"
@@ -693,7 +771,6 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                                         stroke="none"
                                     />
                                 </svg>
-                                <span>{{ c.replace('-', ' ') }}</span>
                             </label>
                         </div>
 
@@ -746,7 +823,11 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                 <button class="close" type="button" aria-label="Close" @click="open = false">×</button>
             </header>
 
-            <section v-if="tab === 'snips'" class="panel__body">
+            <section v-if="tab === 'snips' && entries.length === 0" class="panel__scroll">
+                <UsageHint message="No snips recorded on this request." :code="SNIPS_USAGE" />
+            </section>
+
+            <section v-else-if="tab === 'snips'" class="panel__body">
                 <aside class="entries">
                     <button
                         v-for="(entry, index) in entries"
@@ -765,7 +846,6 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                             <span v-if="entry.bytes !== null" class="entry__bytes">· {{ formatBytes(entry.bytes) }}</span>
                         </span>
                     </button>
-                    <div v-if="entries.length === 0" class="empty">No snips recorded.</div>
                 </aside>
 
                 <article class="value">
@@ -1207,9 +1287,71 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     padding: 2px;
 }
 
-.settings__seg--grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+.settings__title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 8px;
+}
+
+.settings__title-row .settings__title {
+    margin: 0;
+}
+
+.settings__title-row .settings__title-value {
+    margin-left: auto;
+}
+
+
+.tip-anchor {
+    position: relative;
+    display: inline-flex;
+}
+
+/* Opens below the header button: the panel clips anything drawn above its top edge. */
+.tip {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: -4px;
+    width: 220px;
+    padding: 6px 9px;
+    background: var(--snip-text-strong);
+    color: var(--snip-bg);
+    border-radius: 6px;
+    box-shadow: var(--snip-shadow-pill);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+    text-transform: none;
+    letter-spacing: 0;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.tip::after {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    right: 14px;
+    border: 5px solid transparent;
+    border-bottom-color: var(--snip-text-strong);
+}
+
+.settings__title-value {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--snip-text-faint);
+}
+
+.settings__corner-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.settings__seg-btn:has(input:focus-visible) {
+    box-shadow: inset 0 0 0 1px var(--snip-accent);
 }
 
 .settings__seg-btn {
@@ -1407,12 +1549,6 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     background: var(--snip-surface);
 }
 
-.empty {
-    color: var(--snip-text-faint);
-    text-align: center;
-    padding: 28px 14px;
-    font-size: 12px;
-}
 
 .entry {
     display: flex;
