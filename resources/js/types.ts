@@ -150,3 +150,22 @@ export type DataLayerEvent = {
     pushed_at_ms: number;
     payload: unknown;
 };
+
+/** Prop names grouped by the deferred group that loads them. */
+export type InertiaDeferredProps = Record<string, string[]>;
+
+/** The parts of an Inertia page object (v1 to v3) the Inertia tab reads. */
+export type InertiaPage = {
+    component: string;
+    props: Record<string, unknown>;
+    url: string;
+    version: string | null;
+    deferredProps?: InertiaDeferredProps;
+    /** Inertia v3 keeps the page's original deferred groups here across partial reloads. */
+    initialDeferredProps?: InertiaDeferredProps;
+    mergeProps?: string[];
+    prependProps?: string[];
+    deepMergeProps?: string[];
+    /** Entries like `users.id`: merged items of `users` are matched on `id`. */
+    matchPropsOn?: string[];
+};

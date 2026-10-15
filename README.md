@@ -145,11 +145,13 @@ Captures appear in the panel without a full page reload. When the panel is alrea
 
 For Inertia POST → 303 → GET XHR flows (form submissions, destroy actions), captures recorded in the POST handler are flashed to the session and replayed on the next request, so nothing gets lost across the redirect.
 
+The panel also gets an [Inertia tab](#inertia) showing the current page's props.
+
 ---
 
 ## Tabs
 
-The panel has six tabs. Each tab is independent — you only see the ones with data, or all of them when `display_mode = always`.
+The panel has eight tabs. Each tab is independent — you only see the ones with data, or all of them when `display_mode = always`.
 
 ### Snips
 
@@ -232,6 +234,17 @@ window.dataLayer.push({
 The tab shows the event name, the full payload, and the order in which events were pushed during the page lifetime. Site-defined events are highlighted; framework noise (`gtm.js`, `gtm.dom`, `gtm.load`) is collapsed.
 
 Disable with `SNIP_DATALAYER=false`.
+
+### Inertia
+
+Shown on Inertia pages: the props the current page component received, without opening Vue/React devtools. The header names the page component, URL and asset version; each prop expands into a tree.
+
+Props are badged by how Inertia loads them:
+
+- **deferred** — loaded by a follow-up request after the page rendered (`Inertia::defer()`); the group is named when it is not `default`. While the request is still running the prop is listed as **pending**.
+- **merge**, **prepend**, **deep merge** — merged into the current value on partial reloads (`Inertia::merge()`, `Inertia::deepMerge()`); a nested path such as `merge data` names the merged key, and hovering the badge shows the key items are matched on.
+
+The tab follows SPA navigation, back/forward and partial reloads. It reads the page object Inertia already sends to the browser, so it needs no setup and puts nothing extra in the response. Works with Inertia v1, v2 and v3.
 
 ### Cache
 

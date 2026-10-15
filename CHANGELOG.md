@@ -4,6 +4,21 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-10-15
+
+### Added
+- **Inertia** tab, shown on Inertia pages: the current page's component, URL, asset version and props as expandable trees. Props carry **deferred** (with their group, and **pending** until loaded), **merge**, **prepend** and **deep merge** badges. It follows SPA navigation, back/forward and partial reloads, and reads the page object Inertia already sends, so nothing is added to the response.
+- The playground has an **Inertia** switch that renders a fake Inertia page, with buttons that load its deferred props, load more orders (a merging partial reload) and visit another page.
+
+### Changed
+- The panel header's reset button also puts a resized panel back to its default size and forgets the remembered size. It now shows after a resize alone, too.
+- The panel can no longer be resized below 480×440px (or the viewport, when that is smaller), so the header and the settings menu always fit.
+
+### Fixed
+- In a narrow panel the tabs pushed the reset, settings and close buttons out of view. The tabs now move to their own row under the title and wrap if needed, and the buttons stay put.
+- The settings menu could run past the bottom of a short panel, cutting off its last options. It is now capped to the room in the panel and scrolls.
+- Expanded values in the Cache, DataLayer and Queue tabs were drawn as nested bordered cards, because the value tree picked up the list's row styling. They render as the plain tree used in the Snips tab again.
+
 ## [v0.2.5] - 2026-10-14
 
 ### Added

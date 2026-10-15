@@ -128,6 +128,9 @@
             border-radius: 8px;
         }
         button:hover { border-color: var(--on); }
+        button:disabled { opacity: 0.45; cursor: default; border-color: var(--border); }
+        .visits { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 14px; border-bottom: 1px solid var(--row); }
+        .visits[hidden] { display: none; }
         .note {
             margin: 14px 0 0;
             padding: 10px 14px;
@@ -183,6 +186,18 @@
                 <label><input type="radio" name="profiler" value="filled"> With steps</label>
             </div>
         </div>
+        <div class="row">
+            <span class="row__name" id="inertia-label">Inertia<span class="row__hint">A fake Inertia page; off hides the tab</span></span>
+            <div class="options" role="radiogroup" aria-labelledby="inertia-label">
+                <label><input type="radio" name="inertia" value="off" checked> Off</label>
+                <label><input type="radio" name="inertia" value="on"> On</label>
+            </div>
+        </div>
+        <div id="visits" class="visits" hidden>
+            <button type="button" id="load-deferred">Load deferred props</button>
+            <button type="button" id="load-more">Load more orders</button>
+            <button type="button" id="visit-order">Visit an order</button>
+        </div>
         <div class="footer">
             <span>Theme, corner, size and open state are kept in <code>localStorage</code>.</span>
             <button type="button" id="forget">Forget panel settings</button>
@@ -190,7 +205,7 @@
     </form>
 
     <p id="hidden-note" class="note" hidden>
-        Every tab is empty and the profiler is off, so the panel hides its pill, as it does in an app.
+        Every tab is empty and the profiler and Inertia are off, so the panel hides its pill, as it does in an app.
     </p>
 </main>
 
@@ -250,6 +265,91 @@
         };
     }
 
+    /**
+     * The page object an Inertia app renders into its HTML. Shaped like Inertia v2, which lists deferred
+     * props only on this first visit, so the panel has to remember them across the partial reloads below.
+     */
+    const INERTIA_PAGE = {
+        component: 'Orders/Index',
+        url: '/orders?page=1',
+        version: '6f3c2a1d',
+        props: {
+            errors: {},
+            auth: { user: { id: 1, name: 'Ada Lovelace', email: 'ada@example.com' } },
+            orders: {
+                data: [
+                    { id: 1042, status: 'paid', total: 129.9 },
+                    { id: 1043, status: 'pending', total: 18.5 },
+                ],
+                meta: { current_page: 1, last_page: 3 },
+            },
+            filters: { status: 'any', sort: { by: 'created_at', dir: 'desc' } },
+        },
+        deferredProps: { default: ['stats'], sidebar: ['notifications'] },
+        mergeProps: ['orders.data'],
+        matchPropsOn: ['orders.data.id'],
+        deepMergeProps: ['filters'],
+    };
+
+    const DEFERRED_VALUES = {
+        stats: { revenue: 148.4, orders: 2, refunds: 0 },
+        notifications: [{ id: 7, text: 'Order #1043 is waiting for payment' }],
+    };
+
+    let inertiaPage = null;
+
+    /** What Inertia dispatches on the document; `navigate` is skipped for partial reloads, as in Inertia. */
+    function inertiaVisit(page, { partial = false } = {}) {
+        inertiaPage = page;
+        document.dispatchEvent(new CustomEvent('inertia:success', { detail: { page } }));
+        if (!partial) document.dispatchEvent(new CustomEvent('inertia:navigate', { detail: { page } }));
+        updateVisitButtons();
+    }
+
+    /** A partial reload's response: no deferred list, its props merged over the current ones. */
+    function partialReload(props, changes = {}) {
+        const { deferredProps, ...page } = inertiaPage;
+        inertiaVisit({ ...page, ...changes, props: { ...page.props, ...props } }, { partial: true });
+    }
+
+    function pendingDeferred() {
+        return Object.keys(DEFERRED_VALUES).filter((key) => inertiaPage?.component === 'Orders/Index' && !(key in inertiaPage.props));
+    }
+
+    function updateVisitButtons() {
+        const onIndex = inertiaPage?.component === 'Orders/Index';
+        document.getElementById('load-deferred').disabled = pendingDeferred().length === 0;
+        document.getElementById('load-more').disabled = !onIndex || inertiaPage.props.orders.meta.current_page >= 3;
+        document.getElementById('visit-order').disabled = !onIndex;
+    }
+
+    // Each click loads one deferred group, the way Inertia sends one request per group.
+    document.getElementById('load-deferred').addEventListener('click', () => {
+        const [key] = pendingDeferred();
+        partialReload({ [key]: DEFERRED_VALUES[key] });
+    });
+
+    document.getElementById('load-more').addEventListener('click', () => {
+        const { data, meta } = inertiaPage.props.orders;
+        const page = meta.current_page + 1;
+        const lastId = data[data.length - 1].id;
+        const next = [1, 2].map((n) => ({ id: lastId + n, status: 'paid', total: 40 + n }));
+        partialReload(
+            { orders: { data: [...data, ...next], meta: { ...meta, current_page: page } } },
+            { url: `/orders?page=${page}` },
+        );
+    });
+
+    document.getElementById('visit-order').addEventListener('click', () => {
+        const order = inertiaPage.props.orders.data[0];
+        inertiaVisit({
+            component: 'Orders/Show',
+            url: `/orders/${order.id}`,
+            version: INERTIA_PAGE.version,
+            props: { errors: {}, auth: INERTIA_PAGE.props.auth, order: { ...order, items: [{ sku: 'TEA-01', qty: 2 }] } },
+        });
+    });
+
     const form = document.getElementById('controls');
 
     function render() {
@@ -262,13 +362,25 @@
             config: { datalayer: false },
         };
 
-        // The panel reads its payload once on mount, so swap in a fresh element.
+        // The panel reads its payload and the initial Inertia page once on mount, so swap in fresh elements.
+        document.querySelector('script[data-page]')?.remove();
+        inertiaPage = pick('inertia') === 'on' ? structuredClone(INERTIA_PAGE) : null;
+        if (inertiaPage) {
+            const pageEl = document.createElement('script');
+            pageEl.type = 'application/json';
+            pageEl.dataset.page = 'app';
+            pageEl.textContent = JSON.stringify(inertiaPage);
+            document.body.appendChild(pageEl);
+        }
+        document.getElementById('visits').hidden = !inertiaPage;
+        updateVisitButtons();
+
         document.querySelector('laravel-snip')?.remove();
         const el = document.createElement('laravel-snip');
         el.setAttribute('data-payload', JSON.stringify(payload));
         document.body.appendChild(el);
 
-        const empty = !payload.snips.length && !payload.timings.length && !payload.milestones.length && !payload.profile;
+        const empty = !payload.snips.length && !payload.timings.length && !payload.milestones.length && !payload.profile && !inertiaPage;
         document.getElementById('hidden-note').hidden = !empty;
     }
 

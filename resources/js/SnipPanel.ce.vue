@@ -1,29 +1,31 @@
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { onClickOutside, useDraggable } from '@vueuse/core';
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { onClickOutside, useDraggable, useResizeObserver } from '@vueuse/core';
 import ValueTree from './ValueTree.vue';
 import TimingList from './TimingList.vue';
 import MilestoneList from './MilestoneList.vue';
 import DataLayerList from './DataLayerList.vue';
 import CacheList from './CacheList.vue';
 import QueueList from './QueueList.vue';
+import InertiaProps from './InertiaProps.vue';
 import ProfilerReport from './ProfilerReport.vue';
 import GuestLink from './GuestLink.vue';
 import UsageHint from './UsageHint.vue';
-import type { DataLayerEvent, SnipCache, SnipEntry, SnipMilestone, SnipPayload, SnipProfile, SnipTiming } from './types';
+import type { DataLayerEvent, InertiaDeferredProps, InertiaPage, SnipCache, SnipEntry, SnipMilestone, SnipPayload, SnipProfile, SnipTiming } from './types';
 import { formatBytes, shortenFile } from './format';
 import { installDataLayerHook, isCustomEvent } from './dataLayer';
+import { inertiaPageFromEvent, readInitialInertiaPage } from './inertia';
 import { readStorage, writeStorage } from './storage';
 import { useTheme } from './theme';
 
-type Tab = 'snips' | 'timings' | 'milestones' | 'profiler' | 'datalayer' | 'cache' | 'queue';
+type Tab = 'snips' | 'timings' | 'milestones' | 'profiler' | 'inertia' | 'datalayer' | 'cache' | 'queue';
 
 const TAB_STORAGE_KEY = 'laravel-snip:tab';
 const SETTINGS_KEY = 'laravel-snip:settings';
 const OPEN_STATE_KEY = 'laravel-snip:state:open';
 const SIZE_STATE_KEY = 'laravel-snip:state:size';
 const POS_STATE_KEY = 'laravel-snip:state:pos';
-const ALL_TABS: Tab[] = ['snips', 'timings', 'milestones', 'profiler', 'datalayer', 'cache', 'queue'];
+const ALL_TABS: Tab[] = ['snips', 'timings', 'milestones', 'profiler', 'inertia', 'datalayer', 'cache', 'queue'];
 
 type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
@@ -50,8 +52,9 @@ interface Pos { x: number; y: number; }
 type Edge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 const RESIZE_EDGES: Edge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
-const MIN_PANEL_WIDTH = 400;
-const MIN_PANEL_HEIGHT = 240;
+/** Small enough for a corner, big enough that the header (tabs on their own row) and the settings menu fit. */
+const MIN_PANEL_WIDTH = 480;
+const MIN_PANEL_HEIGHT = 440;
 
 function readJson<T>(key: string): T | null {
     try {
@@ -105,12 +108,16 @@ const viewingAsGuest = ref<boolean>(false);
 const dataLayerEvents = ref<DataLayerEvent[]>([]);
 const cache = ref<SnipCache | null>(null);
 const cacheValueUrl = ref<string | null>(null);
+/** Shallow: the page object belongs to the host app's Inertia, so it is shown as a snapshot, not proxied. */
+const inertiaPage = shallowRef<InertiaPage | null>(null);
+const inertiaDeferred = shallowRef<InertiaDeferredProps>({});
 const activeIndex = ref(0);
 const tab = ref<Tab>(readStorage(TAB_STORAGE_KEY, ALL_TABS) ?? 'snips');
 
 const visibleTabs = computed<Tab[]>(() =>
     ALL_TABS.filter((t) => {
         if (t === 'profiler') return profile.value !== null;
+        if (t === 'inertia') return inertiaPage.value !== null;
         if (t === 'datalayer') return dataLayerEnabled.value;
         if (t === 'cache') return cacheEnabled.value;
         if (t === 'queue') return queueEnabled.value;
@@ -166,6 +173,25 @@ const panelStyle = computed<Record<string, string>>(() => {
 });
 
 onClickOutside(settingsMenuRef, () => { settingsOpen.value = false; });
+
+const settingsListRef = ref<HTMLElement | null>(null);
+const settingsMaxHeight = ref<string | undefined>(undefined);
+
+/** The panel clips its children, so the settings menu is capped to the room below it and scrolls past that. */
+function fitSettingsMenu(): void {
+    const menu = settingsListRef.value;
+    const panel = panelRef.value;
+    if (!menu || !panel) return;
+    settingsMaxHeight.value = `${Math.floor(panel.getBoundingClientRect().bottom - menu.getBoundingClientRect().top - 8)}px`;
+}
+
+watch(settingsOpen, async (now) => {
+    if (!now) return;
+    await nextTick();
+    fitSettingsMenu();
+});
+
+useResizeObserver(panelRef, fitSettingsMenu);
 
 watch(panelDragging, (now, prev) => {
     if (prev && !now) {
@@ -375,6 +401,12 @@ function resetPosition(): void {
     hidePositionTip();
 }
 
+/** The header's reset button: back next to the pill, at the default size. */
+function resetLayout(): void {
+    resetPosition();
+    resetSize();
+}
+
 function resetSettings(): void {
     settings.value = { ...DEFAULT_SETTINGS };
     themeMode.value = 'auto';
@@ -418,6 +450,7 @@ onMounted(() => {
     if (!host) return;
 
     loadPayloadInto(host);
+    loadInertiaPage();
     pickInitialTab();
 
     if (dataLayerEnabled.value) {
@@ -428,11 +461,13 @@ onMounted(() => {
     applyThemeAttribute();
     document.addEventListener('keydown', onKeydown);
     document.addEventListener('inertia:success', onInertiaSuccess);
+    document.addEventListener('inertia:navigate', onInertiaNavigate);
 });
 
 onBeforeUnmount(() => {
     document.removeEventListener('keydown', onKeydown);
     document.removeEventListener('inertia:success', onInertiaSuccess);
+    document.removeEventListener('inertia:navigate', onInertiaNavigate);
     uninstallDataLayerHook?.();
     uninstallDataLayerHook = null;
 });
@@ -503,12 +538,48 @@ function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined
  * panel without a full reload.
  */
 function onInertiaSuccess(event: Event): void {
-    const detail = (event as CustomEvent).detail as { page?: { props?: Record<string, unknown> } } | undefined;
-    const next = detail?.page?.props?._snip as SnipPayload | null | undefined;
+    const page = inertiaPageFromEvent(event);
+    if (page === null) return;
 
-    if (next == null) return;
+    applyInertiaPage(page);
 
-    applyParsedPayload(next);
+    const next = page.props._snip as SnipPayload | null | undefined;
+    if (next != null) applyParsedPayload(next);
+}
+
+/**
+ * `inertia:navigate` also covers the first page load and back/forward visits,
+ * which fire no `inertia:success`. Partial reloads (deferred props included)
+ * replace the page without it, so both events are needed. Only the page is
+ * read here: on a history visit the `_snip` prop holds an earlier request's
+ * captures.
+ */
+function onInertiaNavigate(event: Event): void {
+    const page = inertiaPageFromEvent(event);
+    if (page !== null) applyInertiaPage(page);
+}
+
+function loadInertiaPage(): void {
+    const page = readInitialInertiaPage();
+    if (page !== null) applyInertiaPage(page);
+
+    if (inertiaPage.value === null && tab.value === 'inertia') {
+        tab.value = 'snips';
+    }
+}
+
+/**
+ * Deferred props are listed only on the full visit that renders the page; the
+ * partial reloads that follow come back without the list. Inertia v3 keeps it
+ * as `initialDeferredProps`; for older versions the last list is kept while the
+ * component stays the same. Not the URL too: a partial reload may change it
+ * (`?page=2` when loading more), and a full visit lists its own deferred props.
+ */
+function applyInertiaPage(page: InertiaPage): void {
+    const sameComponent = inertiaPage.value?.component === page.component;
+
+    inertiaDeferred.value = page.initialDeferredProps ?? page.deferredProps ?? (sameComponent ? inertiaDeferred.value : {});
+    inertiaPage.value = page;
 }
 
 function pickInitialTab(): void {
@@ -560,12 +631,17 @@ const customDataLayerCount = computed<number>(
     () => dataLayerEnabled.value ? dataLayerEvents.value.filter((e) => isCustomEvent(e.payload)).length : 0,
 );
 
+/** Props of the current Inertia page, leaving out the package's own `_snip` payload. */
+const inertiaPropCount = computed<number>(
+    () => Object.keys(inertiaPage.value?.props ?? {}).filter((key) => key !== '_snip').length,
+);
+
 const cacheKeyCount = computed<number>(
     () => cacheEnabled.value ? (cache.value?.keys.length ?? 0) : 0,
 );
 
 const totalCount = computed<number>(
-    () => entries.value.length + timings.value.length + milestones.value.length + (profile.value !== null ? 1 : 0) + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0),
+    () => entries.value.length + timings.value.length + milestones.value.length + (profile.value !== null ? 1 : 0) + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0) + (inertiaPage.value !== null ? 1 : 0),
 );
 
 const hasContent = computed<boolean>(() => totalCount.value > 0);
@@ -575,6 +651,7 @@ const TAB_LABELS: Record<Tab, string> = {
     timings: 'Timings',
     milestones: 'Milestones',
     profiler: 'Profiler',
+    inertia: 'Inertia',
     datalayer: 'DataLayer',
     cache: 'Cache',
     queue: 'Queue',
@@ -590,6 +667,7 @@ function tabCount(t: Tab): number {
         timings: timings.value.length,
         milestones: milestones.value.length,
         profiler: 0,
+        inertia: inertiaPropCount.value,
         datalayer: customDataLayerCount.value,
         cache: cacheKeyCount.value,
         queue: 0,
@@ -674,13 +752,13 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                     </button>
                 </nav>
 
-                <span v-if="panelMoved" class="tip-anchor settings--push">
+                <span v-if="panelMoved || customSize" class="tip-anchor settings--push">
                     <button
                         class="settings__btn"
                         type="button"
-                        aria-label="Reset panel position"
+                        aria-label="Reset panel position and size"
                         aria-describedby="snip-position-reset-tip"
-                        @click="resetPosition"
+                        @click="resetLayout"
                         @mouseenter="showPositionTip"
                         @mouseleave="hidePositionTip"
                         @focus="showPositionTip"
@@ -693,10 +771,10 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                         </svg>
                     </button>
                     <span v-show="positionTipVisible" id="snip-position-reset-tip" class="tip" role="tooltip">
-                        Moves the panel back next to the pill in the chosen corner and forgets where you dragged it.
+                        Moves the panel back next to the pill in the chosen corner at its default size, and forgets where you dragged and resized it.
                     </span>
                 </span>
-                <div ref="settingsMenuRef" class="settings" :class="{ 'settings--push': !panelMoved }">
+                <div ref="settingsMenuRef" class="settings" :class="{ 'settings--push': !panelMoved && !customSize }">
                     <button
                         class="settings__btn"
                         type="button"
@@ -710,7 +788,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                         </svg>
                     </button>
-                    <div v-if="settingsOpen" class="settings__menu" role="menu">
+                    <div v-if="settingsOpen" ref="settingsListRef" class="settings__menu" :style="{ maxHeight: settingsMaxHeight }" role="menu">
                         <h4 class="settings__title">Theme</h4>
                         <div class="settings__seg" role="radiogroup" aria-label="Theme">
                             <label
@@ -881,6 +959,10 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 
             <section v-else-if="tab === 'profiler'" class="panel__scroll">
                 <ProfilerReport v-if="profile" :profile="profile" />
+            </section>
+
+            <section v-else-if="tab === 'inertia'" class="panel__scroll">
+                <InertiaProps v-if="inertiaPage" :page="inertiaPage" :deferred="inertiaDeferred" />
             </section>
 
             <section v-else-if="tab === 'cache'" class="panel__scroll">
@@ -1067,8 +1149,9 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     position: fixed;
     width: min(880px, 92vw);
     height: min(560px, 70vh);
-    min-width: 400px;
-    min-height: 240px;
+    /* Keep in step with MIN_PANEL_WIDTH / MIN_PANEL_HEIGHT; a viewport smaller than that wins. */
+    min-width: min(480px, 100vw);
+    min-height: min(440px, 100vh);
     max-width: 100vw;
     max-height: 100vh;
     /* Stored sizes are read back from offsetWidth/offsetHeight, which include the border. */
@@ -1080,6 +1163,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    container-type: inline-size;
 }
 
 .panel--resizing {
@@ -1151,6 +1235,15 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 
 .panel__header strong {
     color: var(--snip-text-strong);
+    white-space: nowrap;
+}
+
+/* Only the tabs give way in a narrow panel: they wrap onto more rows, so every tab and button stays reachable. */
+.panel__drag,
+.settings,
+.tip-anchor,
+.close {
+    flex-shrink: 0;
 }
 
 .panel__drag {
@@ -1176,8 +1269,34 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 
 .tabs {
     display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    min-width: 0;
     gap: 4px;
     margin-left: 8px;
+}
+
+/* A narrow panel moves the tabs to a full-width row under the title and buttons. */
+@container (max-width: 720px) {
+    .panel__header {
+        flex-wrap: wrap;
+        row-gap: 10px;
+    }
+
+    .tabs {
+        order: 1;
+        flex-basis: 100%;
+        margin-left: 0;
+    }
+
+    .tip-anchor,
+    .settings {
+        margin-left: auto;
+    }
+
+    .tip-anchor + .settings {
+        margin-left: 0;
+    }
 }
 
 .tab {
@@ -1263,6 +1382,9 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     box-shadow: var(--snip-shadow);
     padding: 10px 12px;
     z-index: 1;
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .settings__title {

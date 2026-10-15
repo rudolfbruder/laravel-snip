@@ -54,7 +54,7 @@ function toggle() {
 </script>
 
 <template>
-    <div class="row">
+    <div class="tree">
         <div class="header" :class="{ clickable: hasChildren }" @click="toggle">
             <span v-if="hasChildren" class="caret">{{ open ? '▾' : '▸' }}</span>
             <span v-else class="caret-spacer"></span>
@@ -78,7 +78,11 @@ function toggle() {
 </template>
 
 <style scoped>
-.row {
+/*
+ * The root element also takes the scoped styles of whichever component renders this tree, so its class
+ * must not match theirs: parents style their own list rows as `.row`.
+ */
+.tree {
     display: flex;
     flex-direction: column;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
