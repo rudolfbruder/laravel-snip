@@ -7,6 +7,7 @@ import { childValueOf, jsValueToNode } from './dumper';
 import { formatBytes } from './format';
 import { filterTree, highlightSegments, matches } from './search';
 import { canCopyValues } from './clipboard';
+import { readStorage, writeStorage } from './storage';
 
 const props = defineProps<{
     page: InertiaPage;
@@ -24,6 +25,20 @@ const MERGE_KINDS: Array<[string, keyof InertiaPage, string]> = [
     ['prepend', 'prependProps', 'Prepended to the current value on partial reloads'],
     ['deep merge', 'deepMergeProps', 'Deep-merged into the current value on partial reloads'],
 ];
+
+/** Props in the order the page received them, or by the size of their JSON; props without a size go last. */
+const ORDERS = ['page', 'size-desc', 'size-asc'] as const;
+type Order = (typeof ORDERS)[number];
+
+const ORDER_LABELS: Record<Order, string> = { page: 'page order', 'size-desc': 'size ↓', 'size-asc': 'size ↑' };
+const ORDER_STORAGE_KEY = 'laravel-snip:inertia-order';
+
+const order = ref<Order>(readStorage(ORDER_STORAGE_KEY, ORDERS) ?? 'page');
+watch(order, (next) => writeStorage(ORDER_STORAGE_KEY, next));
+
+function cycleOrder(): void {
+    order.value = ORDERS[(ORDERS.indexOf(order.value) + 1) % ORDERS.length];
+}
 
 const expanded = ref<Set<string>>(new Set());
 const query = ref('');
@@ -73,6 +88,16 @@ const rows = computed<Row[]>(() => {
     }));
 });
 
+const sortedRows = computed<Row[]>(() => {
+    if (order.value === 'page') return rows.value;
+
+    const dir = order.value === 'size-desc' ? -1 : 1;
+    return rows.value.slice().sort((a, b) => {
+        if (a.bytes === null || b.bytes === null) return (a.bytes === null ? 1 : 0) - (b.bytes === null ? 1 : 0);
+        return (a.bytes - b.bytes) * dir;
+    });
+});
+
 const totalBytes = computed<number | null>(() => {
     const { [SNIP_PROP]: _snip, ...pageProps } = props.page.props;
     return jsonBytes(pageProps);
@@ -80,9 +105,9 @@ const totalBytes = computed<number | null>(() => {
 
 /** Rows matching the search, each trimmed to the parts of its tree that match; all rows when not searching. */
 const visibleRows = computed<Row[]>(() => {
-    if (term.value === '') return rows.value;
+    if (term.value === '') return sortedRows.value;
 
-    return rows.value.flatMap((row) => {
+    return sortedRows.value.flatMap((row) => {
         if (row.node === null) return matches(row.key, term.value) ? [row] : [];
 
         const node = filterTree({ ...row.node, key: row.key }, term.value);
@@ -178,6 +203,9 @@ function toggle(row: Row): void {
                 >×</button>
             </div>
             <span v-if="term" class="muted search__count">{{ visibleRows.length }} of {{ rows.length }} match</span>
+            <button type="button" class="sort" title="Sort props: page order, largest first, smallest first" @click="cycleOrder">
+                {{ ORDER_LABELS[order] }}
+            </button>
         </div>
 
         <div v-if="rows.length === 0" class="empty">This page has no props.</div>
@@ -491,6 +519,28 @@ code {
 
 .search__count {
     flex-shrink: 0;
+}
+
+.sort {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--snip-border);
+    color: var(--snip-text);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.sort:hover {
+    background: var(--snip-surface-2);
+}
+
+.sort:focus-visible {
+    outline: 2px solid var(--snip-accent);
+    outline-offset: -2px;
 }
 
 mark {
