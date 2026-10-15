@@ -529,7 +529,7 @@ class Profiler
     {
         $user = $this->auth->guard($this->config->get('snip.guard'))->user();
 
-        return $user === null ? 'guest' : 'user #'.$user->getAuthIdentifier();
+        return $user === null ? 'guest' : 'user '.$user->getAuthIdentifier();
     }
 
     /**
