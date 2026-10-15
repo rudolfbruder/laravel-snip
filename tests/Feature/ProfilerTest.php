@@ -214,13 +214,14 @@ it('lists jobs pushed onto a queue with their connection, queue and delay', func
     $jobs = array_values(array_filter($profile['calls'], fn (array $call) => $call['kind'] === 'queue'));
 
     expect(array_column($jobs, 'label'))->toBe([ProfilerTestJob::class, ProfilerTestJob::class])
-        ->and($jobs[1]['extra'])->toBe('database:default')
         ->and($profile['text'])->toContain('queue   '.ProfilerTestJob::class);
 
-    // Laravel 10 fires JobQueued without the queue name and the delay.
-    if (property_exists(Illuminate\Queue\Events\JobQueued::class, 'delay')) {
-        expect($jobs[0]['extra'])->toBe('database:emails, delay 60s');
-    }
+    // Laravel 10 fires JobQueued without the queue name and the delay, so only the connection shows.
+    $expected = property_exists(Illuminate\Queue\Events\JobQueued::class, 'delay')
+        ? ['database:emails, delay 60s', 'database:default']
+        : ['database', 'database'];
+
+    expect(array_column($jobs, 'extra'))->toBe($expected);
 });
 
 it('turns a job the sync driver runs into a step that owns its queries', function () {
