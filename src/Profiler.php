@@ -78,6 +78,12 @@ class Profiler
     /** @var array<string, array{count: int, ms: float}> Redis commands by key, to spot values read over and over. */
     private array $redisKeys = [];
 
+    /** When the job being pushed started queueing, so recordJobQueued() can time the push. */
+    private ?float $jobQueueingAt = null;
+
+    /** @var list<array{segment: int, name: string}> Jobs the sync driver is running inline, innermost last. */
+    private array $syncJobs = [];
+
     public function __construct(
         protected ConfigRepository $config,
         protected AuthFactory $auth,
@@ -150,21 +156,12 @@ class Profiler
             return $callback();
         }
 
-        $index = count($this->segments);
-        $this->segments[] = [
-            'label' => $label,
-            'depth' => count($this->openSegments),
-            'start' => microtime(true),
-            'duration' => 0.0,
-            'counters' => [],
-        ];
-        $this->openSegments[] = $index;
+        $index = $this->openSegment($label);
 
         try {
             return $callback();
         } finally {
-            $this->segments[$index]['duration'] = (microtime(true) - $this->segments[$index]['start']) * 1000;
-            array_pop($this->openSegments);
+            $this->closeSegment($index);
         }
     }
 
@@ -247,6 +244,54 @@ class Profiler
             'extra' => $extra,
             'note' => $kind === 'ssr' ? $this->inertiaSsrNote($extra) : null,
         ];
+    }
+
+    /** Marks the start of a job push; the framework fires JobQueued once the queue has taken it. */
+    public function markJobQueueing(): void
+    {
+        if ($this->active) {
+            $this->jobQueueingAt = microtime(true);
+        }
+    }
+
+    /**
+     * Records a job pushed onto a queue, timed from markJobQueueing() when it was called for this push.
+     */
+    public function recordJobQueued(string $name, string $extra): void
+    {
+        if (! $this->active) {
+            return;
+        }
+
+        $durationMs = $this->jobQueueingAt === null ? 0.0 : (microtime(true) - $this->jobQueueingAt) * 1000;
+        $this->jobQueueingAt = null;
+
+        $this->recordCall('queue', $durationMs, $name, $extra);
+    }
+
+    /**
+     * Starts a job the sync driver runs inline. It becomes a step, so the SQL and other calls it
+     * makes are attributed to it rather than to whatever dispatched it.
+     */
+    public function startSyncJob(string $name): void
+    {
+        if (! $this->active) {
+            return;
+        }
+
+        $this->syncJobs[] = ['segment' => $this->openSegment('job '.$name), 'name' => $name];
+    }
+
+    public function finishSyncJob(bool $failed): void
+    {
+        $job = array_pop($this->syncJobs);
+
+        if ($job === null) {
+            return;
+        }
+
+        $this->closeSegment($job['segment']);
+        $this->recordCall('queue', $this->segments[$job['segment']]['duration'], $job['name'], $failed ? 'sync, failed' : 'sync, ran inline');
     }
 
     /**
@@ -357,6 +402,27 @@ class Profiler
         $data['text'] = $this->format($data);
 
         return $data;
+    }
+
+    private function openSegment(string $label): int
+    {
+        $index = count($this->segments);
+        $this->segments[] = [
+            'label' => $label,
+            'depth' => count($this->openSegments),
+            'start' => microtime(true),
+            'duration' => 0.0,
+            'counters' => [],
+        ];
+        $this->openSegments[] = $index;
+
+        return $index;
+    }
+
+    private function closeSegment(int $index): void
+    {
+        $this->segments[$index]['duration'] = (microtime(true) - $this->segments[$index]['start']) * 1000;
+        $this->openSegments = array_values(array_diff($this->openSegments, [$index]));
     }
 
     private function count(string $kind, float $durationMs): void

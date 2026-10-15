@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use RudolfBruder\LaravelSnip\Facades\Snip;
 use RudolfBruder\LaravelSnip\Profiler;
 use RudolfBruder\LaravelSnip\Support\ProfilerListeners;
@@ -18,6 +23,23 @@ function profilerPayload(string $body): ?array
     }
 
     return json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true);
+}
+
+class ProfilerTestJob implements ShouldQueue
+{
+    use Dispatchable;
+    use Queueable;
+
+    public function __construct(public bool $fail = false) {}
+
+    public function handle(): void
+    {
+        DB::select('select 1');
+
+        if ($this->fail) {
+            throw new RuntimeException('job broke');
+        }
+    }
 }
 
 beforeEach(function () {
@@ -166,4 +188,63 @@ it('leaves HTTP calls alone when the app has no Inertia SSR', function () {
     $profile = profilerPayload($this->get('/__profiler-test/no-ssr')->getContent())['profile'];
 
     expect($profile['calls'][0])->toMatchArray(['kind' => 'http', 'note' => null]);
+});
+
+it('lists jobs pushed onto a queue with their connection, queue and delay', function () {
+    config()->set('queue.connections.database', ['driver' => 'database', 'table' => 'jobs', 'queue' => 'default', 'retry_after' => 90]);
+    Schema::create('jobs', function (Blueprint $table) {
+        $table->id();
+        $table->string('queue')->index();
+        $table->longText('payload');
+        $table->unsignedTinyInteger('attempts');
+        $table->unsignedInteger('reserved_at')->nullable();
+        $table->unsignedInteger('available_at');
+        $table->unsignedInteger('created_at');
+    });
+
+    Route::get('/__profiler-test/queued', function () {
+        app(Profiler::class)->surface('queued');
+        ProfilerTestJob::dispatch()->onConnection('database')->onQueue('emails')->delay(60);
+        ProfilerTestJob::dispatch()->onConnection('database');
+
+        return response('<html><body>queued</body></html>')->header('Content-Type', 'text/html');
+    });
+
+    $profile = profilerPayload($this->get('/__profiler-test/queued')->getContent())['profile'];
+    $jobs = array_values(array_filter($profile['calls'], fn (array $call) => $call['kind'] === 'queue'));
+
+    expect(array_column($jobs, 'label'))->toBe([ProfilerTestJob::class, ProfilerTestJob::class])
+        ->and($jobs[1]['extra'])->toBe('database:default')
+        ->and($profile['text'])->toContain('queue   '.ProfilerTestJob::class);
+
+    // Laravel 10 fires JobQueued without the queue name and the delay.
+    if (property_exists(Illuminate\Queue\Events\JobQueued::class, 'delay')) {
+        expect($jobs[0]['extra'])->toBe('database:emails, delay 60s');
+    }
+});
+
+it('turns a job the sync driver runs into a step that owns its queries', function () {
+    config()->set('queue.default', 'sync');
+    config()->set('queue.failed.driver', 'null');
+
+    Route::get('/__profiler-test/sync', function () {
+        app(Profiler::class)->surface('sync');
+        ProfilerTestJob::dispatch();
+
+        try {
+            ProfilerTestJob::dispatch(fail: true);
+        } catch (RuntimeException) {
+        }
+
+        return response('<html><body>sync</body></html>')->header('Content-Type', 'text/html');
+    });
+
+    $profile = profilerPayload($this->get('/__profiler-test/sync')->getContent())['profile'];
+    $jobs = array_values(array_filter($profile['calls'], fn (array $call) => $call['kind'] === 'queue'));
+
+    expect(array_column($jobs, 'extra'))->toBe(['sync, ran inline', 'sync, failed'])
+        ->and(array_column($jobs, 'label'))->toBe([ProfilerTestJob::class, ProfilerTestJob::class])
+        ->and(array_column($profile['steps'], 'label'))->toBe(['job '.ProfilerTestJob::class, 'job '.ProfilerTestJob::class])
+        ->and(array_column($profile['steps'][0]['counters'], 'kind'))->toContain('sql')
+        ->and(array_column($profile['steps'], 'depth'))->toBe([0, 0]);
 });
