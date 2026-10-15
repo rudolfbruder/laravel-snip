@@ -473,6 +473,36 @@ onBeforeUnmount(() => {
 });
 
 watch(tab, (next) => writeStorage(TAB_STORAGE_KEY, next));
+
+const tabsRef = ref<HTMLElement | null>(null);
+const tabsMoreLeft = ref<boolean>(false);
+const tabsMoreRight = ref<boolean>(false);
+
+/** Which edges of the tab row have tabs scrolled out of view past them. */
+function updateTabsOverflow(): void {
+    const el = tabsRef.value;
+    if (!el) return;
+    tabsMoreLeft.value = el.scrollLeft > 1;
+    tabsMoreRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+}
+
+/** A vertical mouse wheel scrolls the tab row sideways when it overflows. */
+function scrollTabsWithWheel(event: WheelEvent): void {
+    const el = tabsRef.value;
+    if (!el || el.scrollWidth <= el.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    el.scrollLeft += event.deltaY;
+}
+
+/** Keeps the active tab visible in the row, e.g. when the panel opens on a tab past the right edge. */
+async function revealActiveTab(): Promise<void> {
+    await nextTick();
+    tabsRef.value?.querySelector('.tab--active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    updateTabsOverflow();
+}
+
+useResizeObserver(tabsRef, updateTabsOverflow);
+watch([tab, visibleTabs, tabsRef], revealActiveTab);
 watch(resolvedTheme, applyThemeAttribute);
 
 function resolveHost(): HTMLElement | undefined {
@@ -739,7 +769,13 @@ function flashCopyState(state: 'copied' | 'failed'): void {
                     <strong>Laravel Snip</strong>
                 </div>
 
-                <nav class="tabs">
+                <nav
+                    ref="tabsRef"
+                    class="tabs"
+                    :class="{ 'tabs--more-left': tabsMoreLeft, 'tabs--more-right': tabsMoreRight }"
+                    @scroll="updateTabsOverflow"
+                    @wheel="scrollTabsWithWheel"
+                >
                     <button
                         v-for="t in visibleTabs"
                         :key="t"
@@ -1149,11 +1185,14 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     position: fixed;
     width: min(880px, 92vw);
     height: min(560px, 70vh);
-    /* Keep in step with MIN_PANEL_WIDTH / MIN_PANEL_HEIGHT; a viewport smaller than that wins. */
-    min-width: min(480px, 100vw);
-    min-height: min(440px, 100vh);
-    max-width: 100vw;
-    max-height: 100vh;
+    /*
+     * Keep in step with MIN_PANEL_WIDTH / MIN_PANEL_HEIGHT. A small viewport wins over them: the panel
+     * sits 16px from the side and 64px from the bottom (above the pill), and must not run off the far edge.
+     */
+    min-width: min(480px, calc(100vw - 32px));
+    min-height: min(440px, calc(100vh - 80px));
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 80px);
     /* Stored sizes are read back from offsetWidth/offsetHeight, which include the border. */
     box-sizing: border-box;
     background: var(--snip-bg);
@@ -1163,7 +1202,6 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    container-type: inline-size;
 }
 
 .panel--resizing {
@@ -1238,7 +1276,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     white-space: nowrap;
 }
 
-/* Only the tabs give way in a narrow panel: they wrap onto more rows, so every tab and button stays reachable. */
+/* Only the tabs give way in a narrow panel (they scroll), so the title and every button stay in view. */
 .panel__drag,
 .settings,
 .tip-anchor,
@@ -1267,37 +1305,40 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     cursor: grabbing;
 }
 
+/*
+ * One row whatever the panel width: tabs that do not fit scroll sideways, with the scrollbar hidden
+ * (it would render light inside the shadow root) and a fade on each edge that has more tabs past it.
+ */
 .tabs {
     display: flex;
     flex: 1 1 auto;
-    flex-wrap: wrap;
     min-width: 0;
     gap: 4px;
     margin-left: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    --fade-left: 0px;
+    --fade-right: 0px;
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade-left), #000 calc(100% - var(--fade-right)), transparent);
 }
 
-/* A narrow panel moves the tabs to a full-width row under the title and buttons. */
-@container (max-width: 720px) {
-    .panel__header {
-        flex-wrap: wrap;
-        row-gap: 10px;
-    }
-
-    .tabs {
-        order: 1;
-        flex-basis: 100%;
-        margin-left: 0;
-    }
-
-    .tip-anchor,
-    .settings {
-        margin-left: auto;
-    }
-
-    .tip-anchor + .settings {
-        margin-left: 0;
-    }
+.tabs::-webkit-scrollbar {
+    display: none;
 }
+
+.tabs--more-left {
+    --fade-left: 28px;
+}
+
+.tabs--more-right {
+    --fade-right: 28px;
+}
+
+.tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
 
 .tab {
     background: transparent;

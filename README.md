@@ -237,7 +237,9 @@ Disable with `SNIP_DATALAYER=false`.
 
 ### Inertia
 
-Shown on Inertia pages: the props the current page component received, without opening Vue/React devtools. The header names the page component, URL and asset version; each prop expands into a tree.
+Shown on Inertia pages: the props the current page component received, without opening Vue/React devtools. The header names the page component and URL and gives the total size of the props; each prop expands into a tree, and arrays, objects and strings show their size in the response.
+
+The search box filters props by name, nested key or value, opens the path down to each match and highlights it.
 
 Props are badged by how Inertia loads them:
 

@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import type { SnipNode } from './types';
+import { highlightSegments } from './search';
 
 const props = defineProps<{
     node: SnipNode;
     initiallyOpen?: boolean;
     depth?: number;
+    /** Lowercased search term to mark in keys and values. */
+    highlight?: string;
 }>();
 
-const open = ref(props.initiallyOpen ?? (props.depth ?? 0) < 1);
+const open = ref(props.node.open ?? props.initiallyOpen ?? (props.depth ?? 0) < 1);
 
 const hasChildren = computed(() => Array.isArray(props.node.children) && props.node.children.length > 0);
 
@@ -59,10 +62,10 @@ function toggle() {
             <span v-if="hasChildren" class="caret">{{ open ? '▾' : '▸' }}</span>
             <span v-else class="caret-spacer"></span>
 
-            <span v-if="node.key !== undefined" class="key">{{ node.key }}</span>
+            <span v-if="node.key !== undefined" class="key"><template v-for="(seg, i) in highlightSegments(node.key, highlight)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
             <span v-if="node.key !== undefined" class="colon">:</span>
 
-            <span class="preview" :style="{ color: typeColor }">{{ node.preview }}</span>
+            <span class="preview" :style="{ color: typeColor }"><template v-for="(seg, i) in highlightSegments(node.preview, hasChildren ? undefined : highlight)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
             <span class="type">{{ node.type }}</span>
         </div>
 
@@ -72,6 +75,7 @@ function toggle() {
                 :key="index"
                 :node="child"
                 :depth="(depth ?? 0) + 1"
+                :highlight="highlight"
             />
         </div>
     </div>
@@ -120,6 +124,12 @@ function toggle() {
 .key {
     color: var(--snip-text-strong);
     font-weight: 600;
+}
+
+mark {
+    background: color-mix(in srgb, var(--snip-warn) 45%, transparent);
+    color: inherit;
+    border-radius: 2px;
 }
 
 .colon {

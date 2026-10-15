@@ -4,6 +4,8 @@ export type SnipNode = {
     preview: string;
     children?: SnipNode[];
     redacted?: boolean;
+    /** Set by client-side search (see search.ts) on nodes leading to a match, so they render expanded. */
+    open?: boolean;
 };
 
 export type SnipEntry = {
@@ -159,7 +161,6 @@ export type InertiaPage = {
     component: string;
     props: Record<string, unknown>;
     url: string;
-    version: string | null;
     deferredProps?: InertiaDeferredProps;
     /** Inertia v3 keeps the page's original deferred groups here across partial reloads. */
     initialDeferredProps?: InertiaDeferredProps;

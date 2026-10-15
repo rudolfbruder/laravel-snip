@@ -4,6 +4,19 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.1] - 2026-10-15
+
+### Added
+- The Inertia tab has a search box: it keeps the props whose name, nested keys or values contain the text, opens the path down to each match and highlights it. The **×** button or **Esc** clears it, and clearing brings back what was open before.
+- Each array, object and string prop in the Inertia tab shows its size (the length of its JSON in the response), and the header shows the total of all props.
+
+### Changed
+- The tabs always stay on one line next to the title. Tabs that do not fit scroll sideways (with the mouse wheel too), a fade marks the edge with more tabs, and the active tab is scrolled into view. This replaces the separate row narrow panels used in v0.3.0.
+- The Inertia tab no longer shows the page's asset version, which is rarely useful when debugging.
+
+### Fixed
+- On a narrow screen the panel ran off the left edge, because its 480px minimum width ignored the viewport. Its minimum and maximum size now leave the 16px corner gap free.
+
 ## [v0.3.0] - 2026-10-15
 
 ### Added

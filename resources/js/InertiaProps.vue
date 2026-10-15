@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ValueTree from './ValueTree.vue';
 import type { InertiaDeferredProps, InertiaPage, SnipNode } from './types';
 import { jsValueToNode } from './dumper';
+import { formatBytes } from './format';
+import { filterTree, highlightSegments, matches } from './search';
 
 const props = defineProps<{
     page: InertiaPage;
@@ -13,7 +15,7 @@ const props = defineProps<{
 const SNIP_PROP = '_snip';
 
 type Badge = { text: string; kind: 'deferred' | 'pending' | 'merge'; title: string };
-type Row = { key: string; node: SnipNode | null; badges: Badge[] };
+type Row = { key: string; node: SnipNode | null; badges: Badge[]; bytes: number | null };
 
 const MERGE_KINDS: Array<[string, keyof InertiaPage, string]> = [
     ['merge', 'mergeProps', 'Appended to the current value on partial reloads'],
@@ -22,6 +24,31 @@ const MERGE_KINDS: Array<[string, keyof InertiaPage, string]> = [
 ];
 
 const expanded = ref<Set<string>>(new Set());
+const query = ref('');
+const searchInput = ref<HTMLInputElement | null>(null);
+
+function clearSearch(): void {
+    query.value = '';
+    searchInput.value?.focus();
+}
+const term = computed<string>(() => query.value.trim().toLowerCase());
+
+const encoder = new TextEncoder();
+
+/** What a value adds to the Inertia response: the UTF-8 length of its JSON. */
+function jsonBytes(value: unknown): number | null {
+    try {
+        const json = JSON.stringify(value);
+        return json === undefined ? null : encoder.encode(json).length;
+    } catch {
+        return null;
+    }
+}
+
+/** Sizes are shown where they can grow: arrays, objects and strings. */
+function sized(value: unknown): boolean {
+    return typeof value === 'string' || (value !== null && typeof value === 'object');
+}
 
 const deferredGroups = computed<Map<string, string>>(() => {
     const groups = new Map<string, string>();
@@ -40,7 +67,38 @@ const rows = computed<Row[]>(() => {
         key,
         node: key in values ? jsValueToNode(values[key]) : null,
         badges: badgesFor(key, key in values),
+        bytes: key in values && sized(values[key]) ? jsonBytes(values[key]) : null,
     }));
+});
+
+const totalBytes = computed<number | null>(() => {
+    const { [SNIP_PROP]: _snip, ...pageProps } = props.page.props;
+    return jsonBytes(pageProps);
+});
+
+/** Rows matching the search, each trimmed to the parts of its tree that match; all rows when not searching. */
+const visibleRows = computed<Row[]>(() => {
+    if (term.value === '') return rows.value;
+
+    return rows.value.flatMap((row) => {
+        if (row.node === null) return matches(row.key, term.value) ? [row] : [];
+
+        const node = filterTree({ ...row.node, key: row.key }, term.value);
+        return node ? [{ ...row, node }] : [];
+    });
+});
+
+// Searching opens every prop with a match inside it; clearing the search brings back what was open before.
+let expandedBeforeSearch: Set<string> | null = null;
+
+watch(term, (now, before) => {
+    if (now === '') {
+        expanded.value = expandedBeforeSearch ?? new Set();
+        expandedBeforeSearch = null;
+        return;
+    }
+    if (before === '') expandedBeforeSearch = expanded.value;
+    expanded.value = new Set(visibleRows.value.filter((row) => row.node?.open).map((row) => row.key));
 });
 
 const pendingCount = computed<number>(() => rows.value.filter((row) => row.node === null).length);
@@ -92,16 +150,39 @@ function toggle(row: Row): void {
         <header class="head">
             <span class="component-chip" :title="'Page component'">{{ page.component }}</span>
             <code class="url" :title="page.url">{{ page.url }}</code>
-            <span v-if="page.version" class="muted">version: <code>{{ page.version }}</code></span>
             <span class="muted">
-                {{ loadedCount }} prop{{ loadedCount === 1 ? '' : 's' }}<span v-if="pendingCount"> · {{ pendingCount }} deferred pending</span>
+                {{ loadedCount }} prop{{ loadedCount === 1 ? '' : 's' }}<span v-if="totalBytes !== null"> · {{ formatBytes(totalBytes) }}</span><span v-if="pendingCount"> · {{ pendingCount }} deferred pending</span>
             </span>
         </header>
 
+        <div v-if="rows.length > 0" class="search">
+            <div class="search__field">
+                <input
+                    ref="searchInput"
+                    v-model="query"
+                    type="search"
+                    class="search__input"
+                    placeholder="Search prop names and values…"
+                    aria-label="Search props"
+                    @keydown.esc="query = ''"
+                />
+                <button
+                    v-if="query"
+                    type="button"
+                    class="search__clear"
+                    title="Clear search (Esc)"
+                    aria-label="Clear search"
+                    @click="clearSearch"
+                >×</button>
+            </div>
+            <span v-if="term" class="muted search__count">{{ visibleRows.length }} of {{ rows.length }} match</span>
+        </div>
+
         <div v-if="rows.length === 0" class="empty">This page has no props.</div>
+        <div v-else-if="visibleRows.length === 0" class="empty">No prop names or values match "{{ query.trim() }}".</div>
 
         <ul v-else class="props">
-            <li v-for="row in rows" :key="row.key" class="prop">
+            <li v-for="row in visibleRows" :key="row.key" class="prop">
                 <button
                     type="button"
                     class="prop__head"
@@ -110,7 +191,7 @@ function toggle(row: Row): void {
                     @click="toggle(row)"
                 >
                     <span class="caret" :class="{ 'caret--open': expanded.has(row.key), 'caret--hidden': !expandable(row) }">▸</span>
-                    <span class="key">{{ row.key }}</span>
+                    <span class="key"><template v-for="(seg, i) in highlightSegments(row.key, term)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
                     <span
                         v-for="badge in row.badges"
                         :key="badge.text"
@@ -118,17 +199,20 @@ function toggle(row: Row): void {
                         :class="`badge--${badge.kind}`"
                         :title="badge.title"
                     >{{ badge.text }}</span>
-                    <span v-if="row.node" class="preview" :title="row.node.preview">{{ row.node.preview }}</span>
+                    <span v-if="row.node" class="preview" :title="row.node.preview"><template v-for="(seg, i) in highlightSegments(row.node.preview, expandable(row) ? undefined : term)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
                     <span v-else class="preview preview--pending">not loaded</span>
+                    <span v-if="row.bytes !== null" class="size" title="Size of this prop's JSON in the response">{{ formatBytes(row.bytes) }}</span>
                 </button>
 
                 <div v-if="row.node && expanded.has(row.key)" class="prop__body">
+                    <!-- Keyed on the search term so the trees remount and pick up the open paths of a new search. -->
                     <ValueTree
                         v-for="(child, index) in row.node.children"
-                        :key="index"
+                        :key="`${term}:${index}`"
                         :node="child"
                         :initially-open="false"
                         :depth="1"
+                        :highlight="term"
                     />
                 </div>
             </li>
@@ -294,6 +378,93 @@ code {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.size {
+    flex-shrink: 0;
+    min-width: 52px;
+    text-align: right;
+    color: var(--snip-text-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.search__field {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+}
+
+.search__input {
+    flex: 1;
+    min-width: 0;
+    background: var(--snip-surface);
+    border: 1px solid var(--snip-border);
+    color: var(--snip-text);
+    border-radius: 6px;
+    /* Room on the right for the clear button. */
+    padding: 5px 28px 5px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+}
+
+.search__input:focus {
+    border-color: var(--snip-accent);
+}
+
+/* The browser's own clear button only exists in some engines; ours replaces it everywhere. */
+.search__input::-webkit-search-cancel-button {
+    appearance: none;
+}
+
+.search__clear {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--snip-text-muted);
+    font: inherit;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.search__clear:hover {
+    background: var(--snip-hover);
+    color: var(--snip-text-strong);
+}
+
+.search__clear:focus-visible {
+    outline: 2px solid var(--snip-accent);
+    outline-offset: -2px;
+}
+
+.search__count {
+    flex-shrink: 0;
+}
+
+mark {
+    background: color-mix(in srgb, var(--snip-warn) 45%, transparent);
+    color: inherit;
+    border-radius: 2px;
 }
 
 .preview--pending {
