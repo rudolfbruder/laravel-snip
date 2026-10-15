@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import ValueTree from './ValueTree.vue';
+import CopyValueButton from './CopyValueButton.vue';
 import type { InertiaDeferredProps, InertiaPage, SnipNode } from './types';
-import { jsValueToNode } from './dumper';
+import { childValueOf, jsValueToNode } from './dumper';
 import { formatBytes } from './format';
 import { filterTree, highlightSegments, matches } from './search';
+import { canCopyValues } from './clipboard';
 
 const props = defineProps<{
     page: InertiaPage;
@@ -183,26 +185,36 @@ function toggle(row: Row): void {
 
         <ul v-else class="props">
             <li v-for="row in visibleRows" :key="row.key" class="prop">
-                <button
-                    type="button"
-                    class="prop__head"
-                    :disabled="!expandable(row)"
-                    :aria-expanded="expandable(row) ? expanded.has(row.key) : undefined"
-                    @click="toggle(row)"
-                >
-                    <span class="caret" :class="{ 'caret--open': expanded.has(row.key), 'caret--hidden': !expandable(row) }">▸</span>
-                    <span class="key"><template v-for="(seg, i) in highlightSegments(row.key, term)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
-                    <span
-                        v-for="badge in row.badges"
-                        :key="badge.text"
-                        class="badge"
-                        :class="`badge--${badge.kind}`"
-                        :title="badge.title"
-                    >{{ badge.text }}</span>
-                    <span v-if="row.node" class="preview" :title="row.node.preview"><template v-for="(seg, i) in highlightSegments(row.node.preview, expandable(row) ? undefined : term)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
-                    <span v-else class="preview preview--pending">not loaded</span>
-                    <span v-if="row.bytes !== null" class="size" title="Size of this prop's JSON in the response">{{ formatBytes(row.bytes) }}</span>
-                </button>
+                <div class="prop__row">
+                    <button
+                        type="button"
+                        class="prop__head"
+                        :disabled="!expandable(row)"
+                        :aria-expanded="expandable(row) ? expanded.has(row.key) : undefined"
+                        @click="toggle(row)"
+                    >
+                        <span class="caret" :class="{ 'caret--open': expanded.has(row.key), 'caret--hidden': !expandable(row) }">▸</span>
+                        <span class="key"><template v-for="(seg, i) in highlightSegments(row.key, term)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
+                        <span
+                            v-for="badge in row.badges"
+                            :key="badge.text"
+                            class="badge"
+                            :class="`badge--${badge.kind}`"
+                            :title="badge.title"
+                        >{{ badge.text }}</span>
+                        <span v-if="row.node" class="preview" :title="row.node.preview"><template v-for="(seg, i) in highlightSegments(row.node.preview, expandable(row) ? undefined : term)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
+                        <span v-else class="preview preview--pending">not loaded</span>
+                        <span v-if="row.bytes !== null" class="size" title="Size of this prop's JSON in the response">{{ formatBytes(row.bytes) }}</span>
+                    </button>
+                    <CopyValueButton
+                        v-if="row.node"
+                        class="copy"
+                        :target="row.key"
+                        :value="page.props[row.key]"
+                        :label="`the value of ${row.key}`"
+                    />
+                    <span v-else-if="canCopyValues" class="copy" aria-hidden="true"></span>
+                </div>
 
                 <div v-if="row.node && expanded.has(row.key)" class="prop__body">
                     <!-- Keyed on the search term so the trees remount and pick up the open paths of a new search. -->
@@ -213,6 +225,7 @@ function toggle(row: Row): void {
                         :initially-open="false"
                         :depth="1"
                         :highlight="term"
+                        :value="childValueOf(page.props[row.key], child)"
                     />
                 </div>
             </li>
@@ -286,7 +299,17 @@ code {
     border-top: 1px solid var(--snip-border-soft);
 }
 
+.prop__row {
+    display: flex;
+    align-items: center;
+}
+
+.prop__row:hover {
+    background: var(--snip-hover);
+}
+
 .prop__head {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -304,10 +327,6 @@ code {
 
 .prop__head:disabled {
     cursor: default;
-}
-
-.prop__head:not(:disabled):hover {
-    background: var(--snip-hover);
 }
 
 .prop__head:focus-visible {
@@ -388,6 +407,19 @@ code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
+}
+
+/* Revealed while the row is hovered or focused; pending rows get an empty one, to keep the sizes lined up. */
+.copy {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.prop__row:hover .copy,
+.prop__row:focus-within .copy {
+    visibility: visible;
 }
 
 .search {

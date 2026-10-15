@@ -241,6 +241,8 @@ Shown on Inertia pages: the props the current page component received, without o
 
 The search box filters props by name, nested key or value, opens the path down to each match and highlights it.
 
+Hovering a prop, or any key inside it, shows a copy button that puts its full value on the clipboard: strings as plain text, arrays and objects as indented JSON.
+
 Props are badged by how Inertia loads them:
 
 - **deferred** — loaded by a follow-up request after the page rendered (`Inertia::defer()`); the group is named when it is not `default`. While the request is still running the prop is listed as **pending**.

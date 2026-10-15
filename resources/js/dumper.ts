@@ -34,6 +34,17 @@ export function jsValueToNode(value: unknown, depth = 0, seen: WeakSet<object> =
     return dumpObjectLike(value, depth, seen);
 }
 
+/**
+ * The value a child node of `jsValueToNode(parent)` was dumped from, looked up by its key. Meant for JSON
+ * values (plain objects and arrays), whose keys map one to one, so undefined means not found: a truncation
+ * marker, which has no key, or a parent that is not known.
+ */
+export function childValueOf(parent: unknown, child: SnipNode): unknown {
+    if (child.key === undefined || typeof parent !== 'object' || parent === null) return undefined;
+
+    return Object.prototype.hasOwnProperty.call(parent, child.key) ? (parent as Record<string, unknown>)[child.key] : undefined;
+}
+
 function dumpString(value: string): SnipNode {
     if (value.length <= MAX_STRING_LENGTH) {
         return { type: 'string', preview: value };

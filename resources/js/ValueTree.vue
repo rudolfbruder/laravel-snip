@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue';
 import type { SnipNode } from './types';
 import { highlightSegments } from './search';
+import CopyValueButton from './CopyValueButton.vue';
+import { childValueOf } from './dumper';
 
 const props = defineProps<{
     node: SnipNode;
@@ -9,6 +11,8 @@ const props = defineProps<{
     depth?: number;
     /** Lowercased search term to mark in keys and values. */
     highlight?: string;
+    /** The JSON value this node was dumped from (see jsValueToNode), when known; it adds copy buttons. */
+    value?: unknown;
 }>();
 
 const open = ref(props.node.open ?? props.initiallyOpen ?? (props.depth ?? 0) < 1);
@@ -67,6 +71,13 @@ function toggle() {
 
             <span class="preview" :style="{ color: typeColor }"><template v-for="(seg, i) in highlightSegments(node.preview, hasChildren ? undefined : highlight)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></span>
             <span class="type">{{ node.type }}</span>
+            <CopyValueButton
+                v-if="value !== undefined"
+                class="copy"
+                :target="node"
+                :value="value"
+                :label="node.key !== undefined ? `the value of ${node.key}` : 'this value'"
+            />
         </div>
 
         <div v-if="open && hasChildren" class="children">
@@ -76,6 +87,7 @@ function toggle() {
                 :node="child"
                 :depth="(depth ?? 0) + 1"
                 :highlight="highlight"
+                :value="childValueOf(value, child)"
             />
         </div>
     </div>
@@ -150,6 +162,15 @@ mark {
     letter-spacing: 0.05em;
     padding-left: 12px;
     flex-shrink: 0;
+}
+
+.copy {
+    margin: -2px 0;
+}
+
+.header:hover > .copy,
+.header:focus-within > .copy {
+    visibility: visible;
 }
 
 .children {

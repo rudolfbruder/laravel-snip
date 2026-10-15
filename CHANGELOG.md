@@ -4,6 +4,11 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.2] - 2026-10-15
+
+### Added
+- Copy buttons in the Inertia tab: hovering a prop, or any key inside an expanded prop, shows a button that copies its full value. Strings are copied as plain text, arrays and objects as indented JSON, and long strings are copied whole, not as the shortened preview. On touch screens the buttons are always shown.
+
 ## [v0.3.1] - 2026-10-15
 
 ### Added
