@@ -4,6 +4,17 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.3] - 2026-10-15
+
+### Added
+- The Profiler lists every job the request pushes onto a queue, queued listeners, mail and notifications included, as a **queue** call with its connection, queue and delay, and how long the push took. On Laravel 10 only the connection is shown.
+- A job the `sync` driver runs inline becomes its own step in the Profiler, so the queries it makes count toward the job rather than the code that dispatched it. A failed one is shown in red.
+- Inertia's server-side render shows in the Profiler as its own **ssr** kind. A failed render is shown in red, with a note that the page fell back to rendering in the browser and how to start the SSR server.
+- A sort button next to the Inertia tab's search box orders props by page order, largest first or smallest first. The choice is remembered.
+
+### Changed
+- The Profiler names the request's user as `user 216715` instead of `user #216715`.
+
 ## [v0.3.2] - 2026-10-15
 
 ### Added
