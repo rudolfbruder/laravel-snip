@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RudolfBruder\LaravelSnip;
 
 use Closure;
+use Inertia\Inertia;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Http\Request;
@@ -37,6 +38,9 @@ class Profiler
     /** SQL is truncated to this many characters in the report. */
     private const SQL_PREVIEW_LENGTH = 400;
 
+    /** Where Inertia's HTTP gateway finds its SSR server when `inertia.ssr.url` is not set. */
+    private const INERTIA_SSR_DEFAULT_URL = 'http://127.0.0.1:13714';
+
     private bool $active = false;
 
     private ?string $surface = null;
@@ -59,7 +63,7 @@ class Profiler
     /** @var array<string, array{count: int, ms: float}> */
     private array $totals = [];
 
-    /** @var list<array{kind: string, at: float, ms: float, label: string, step: string, extra: string}> */
+    /** @var list<array{kind: string, at: float, ms: float, label: string, step: string, extra: string, note: ?string}> */
     private array $calls = [];
 
     /** @var list<array{ms: float, sql: string, connection: string, step: string}> */
@@ -222,6 +226,11 @@ class Profiler
             return;
         }
 
+        // Inertia's SSR render arrives as a plain HTTP call; it gets its own kind so it can be told apart.
+        if ($kind === 'http' && $this->isInertiaSsrCall($label)) {
+            $kind = 'ssr';
+        }
+
         $this->count($kind, $durationMs);
 
         // Redis is counted only: a page makes hundreds of cache reads and listing them buries the rest.
@@ -236,7 +245,42 @@ class Profiler
             'label' => $label,
             'step' => $this->currentStep(),
             'extra' => $extra,
+            'note' => $kind === 'ssr' ? $this->inertiaSsrNote($extra) : null,
         ];
+    }
+
+    /**
+     * Whether an HTTP call is Inertia asking its SSR server to render the page. Inertia's gateway posts
+     * to `inertia.ssr.url` with `/render` appended, the same way across v1 to v3.
+     */
+    private function isInertiaSsrCall(string $label): bool
+    {
+        $url = $this->config->get('inertia.ssr.url') ?? (class_exists(Inertia::class) ? self::INERTIA_SSR_DEFAULT_URL : null);
+
+        if (! is_string($url) || $url === '') {
+            return false;
+        }
+
+        $base = rtrim((string) preg_replace('#/render/?$#', '', $url), '/');
+
+        return str_contains($label, $base.'/render');
+    }
+
+    /**
+     * Why a failed SSR render matters: Inertia swallows the error and the page is rendered in the
+     * browser instead, so nothing else on the page says SSR is off.
+     */
+    private function inertiaSsrNote(string $extra): ?string
+    {
+        if ($extra === '' || preg_match('/^2\d\d$/', $extra)) {
+            return null;
+        }
+
+        if (preg_match('/^\d{3}$/', $extra)) {
+            return "SSR server answered {$extra}, so the page was rendered in the browser instead.";
+        }
+
+        return 'SSR server not reachable, so the page was rendered in the browser instead. Start it with `php artisan inertia:start-ssr`.';
     }
 
     public function recordQuery(string $sql, float $durationMs, string $connection): void
@@ -377,6 +421,7 @@ class Profiler
                 'ms' => $this->round($call['ms']),
                 'label' => $call['label'],
                 'extra' => $call['extra'],
+                'note' => $call['note'],
                 'step' => $call['step'],
             ], $this->calls),
             'views' => [
@@ -558,6 +603,11 @@ class Profiler
                     $call['extra'] === '' ? '' : '  '.$call['extra'],
                     $call['step'],
                 );
+
+                if ($call['note'] !== null) {
+                    // Lined up under the label: offset, duration and kind columns take 37 characters.
+                    $lines[] = str_repeat(' ', 37).$call['note'];
+                }
             }
         }
 

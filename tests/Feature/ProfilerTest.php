@@ -130,3 +130,40 @@ it('only runs the closure when the profiler is not armed', function () {
         ->and($profiler->hasCaptures())->toBeFalse()
         ->and($profiler->report(request()))->toBeNull();
 });
+
+it('files Inertia SSR renders under their own kind and explains a failed one', function () {
+    config()->set('inertia.ssr.url', 'http://127.0.0.1:13714');
+
+    Route::get('/__profiler-test/ssr', function () {
+        $profiler = app(Profiler::class);
+        $profiler->surface('ssr');
+        $profiler->recordCall('http', 3.0, 'POST http://127.0.0.1:13714/render', 'connection failed');
+        $profiler->recordCall('http', 2.0, 'POST http://127.0.0.1:13714/render', '200');
+        $profiler->recordCall('http', 1.0, 'GET https://api.example.com/render', '200');
+
+        return response('<html><body>ssr</body></html>')->header('Content-Type', 'text/html');
+    });
+
+    $profile = profilerPayload($this->get('/__profiler-test/ssr')->getContent())['profile'];
+
+    expect(array_column($profile['calls'], 'kind'))->toBe(['ssr', 'ssr', 'http'])
+        ->and($profile['calls'][0]['note'])->toContain('SSR server not reachable')
+        ->and($profile['calls'][1]['note'])->toBeNull()
+        ->and($profile['calls'][2]['note'])->toBeNull()
+        ->and($profile['text'])->toContain('ssr     POST http://127.0.0.1:13714/render  connection failed')
+        ->toContain('php artisan inertia:start-ssr');
+});
+
+it('leaves HTTP calls alone when the app has no Inertia SSR', function () {
+    Route::get('/__profiler-test/no-ssr', function () {
+        $profiler = app(Profiler::class);
+        $profiler->surface('no-ssr');
+        $profiler->recordCall('http', 1.0, 'POST http://127.0.0.1:13714/render', 'connection failed');
+
+        return response('<html><body>no ssr</body></html>')->header('Content-Type', 'text/html');
+    });
+
+    $profile = profilerPayload($this->get('/__profiler-test/no-ssr')->getContent())['profile'];
+
+    expect($profile['calls'][0])->toMatchArray(['kind' => 'http', 'note' => null]);
+});

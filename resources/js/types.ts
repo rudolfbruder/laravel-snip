@@ -126,7 +126,8 @@ export type SnipProfile = {
     totals: SnipProfileCounter[];
     cache: { hit: number; miss: number; write: number };
     steps: Array<{ label: string; depth: number; start_ms: number; duration_ms: number; counters: SnipProfileCounter[] }>;
-    calls: Array<{ kind: string; at_ms: number; ms: number; label: string; extra: string; step: string }>;
+    /** `note` explains a call that needs it, such as a failed Inertia SSR render; absent from older payloads. */
+    calls: Array<{ kind: string; at_ms: number; ms: number; label: string; extra: string; note?: string | null; step: string }>;
     views: { count: number; first_at_ms: number | null; heaviest: Array<{ name: string; count: number; ms: number }> };
     redis_keys: Array<{ key: string; count: number; ms: number }>;
     queries: {

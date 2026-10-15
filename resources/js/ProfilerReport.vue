@@ -68,8 +68,11 @@ function statusTone(status: number): string {
     return 'ok';
 }
 
-function isFailed(extra: string): boolean {
-    return /fail/i.test(extra);
+/** Kinds whose short name needs explaining, as a tooltip. */
+const KIND_TITLES: Record<string, string> = { ssr: 'Inertia server-side rendering' };
+
+function isFailed(call: SnipProfile['calls'][number]): boolean {
+    return /fail/i.test(call.extra) || (call.kind === 'ssr' && !!call.note);
 }
 
 function phaseSlot(index: number): string {
@@ -200,6 +203,7 @@ function waterfall(startMs: number, durationMs: number): Record<string, string> 
                         :key="k.kind"
                         type="button"
                         class="filter"
+                        :title="KIND_TITLES[k.kind]"
                         :class="{ 'filter--active': callKind === k.kind }"
                         @click="callKind = k.kind"
                     >
@@ -207,12 +211,13 @@ function waterfall(startMs: number, durationMs: number): Record<string, string> 
                     </button>
                 </div>
                 <ul class="rows">
-                    <li v-for="(call, i) in visibleCalls" :key="i" class="call" :class="{ 'call--failed': isFailed(call.extra) }">
+                    <li v-for="(call, i) in visibleCalls" :key="i" class="call" :class="{ 'call--failed': isFailed(call) }">
                         <span class="at">+{{ Math.round(call.at_ms) }}</span>
-                        <span class="kind">{{ call.kind }}</span>
+                        <span class="kind" :title="KIND_TITLES[call.kind]">{{ call.kind }}</span>
                         <div class="call__main">
                             <span class="mono">{{ call.label }}</span>
                             <span v-if="call.extra" class="call__extra">{{ call.extra }}</span>
+                            <span v-if="call.note" class="call__note">{{ call.note }}</span>
                             <span v-if="call.step !== '-'" class="in">in {{ call.step }}</span>
                         </div>
                         <span class="dur" :style="{ color: durationColor(call.ms) }">{{ ms(call.ms) }}</span>
@@ -776,6 +781,12 @@ details[open] > summary.card__title {
 
 .call--failed .call__extra::before {
     content: '✕ ';
+}
+
+.call__note {
+    color: var(--snip-text);
+    font-size: 11px;
+    word-break: normal;
 }
 
 /* Views and redis keys */
