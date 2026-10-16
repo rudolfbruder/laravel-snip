@@ -4,6 +4,8 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.4] - 2026-10-16
+
 ### Added
 - A **Mail** tab lists every mail the request sends, with sender, recipients, subject, mailer and the Mailable or Notification class that built it. The body can be read as a rendered HTML preview (embedded images included), as plain text or as HTML source, and attachments are listed by name and size. Mail sent before a redirect shows on the next page. Mail is still delivered as usual. Off by default; turn it on with `SNIP_MAIL=true`.
 
