@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useClipboard } from '@vueuse/core';
+import { csrfHeaders } from './csrf';
 
 const props = defineProps<{
     /** The guest-link endpoint; GET reads the active link, POST replaces it, DELETE revokes it. */
@@ -21,18 +22,6 @@ function clock(at: number | null | undefined): string {
 
 const expiresAt = computed<string>(() => clock(link.value?.expires_at));
 const createdAt = computed<string>(() => clock(link.value?.created_at));
-
-/**
- * POST and DELETE pass through Laravel's CSRF check. The framework mirrors the token into the
- * readable XSRF-TOKEN cookie on every web response, and accepts it back as X-XSRF-TOKEN.
- */
-function csrfHeaders(): Record<string, string> {
-    const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
-    if (match) return { 'X-XSRF-TOKEN': decodeURIComponent(match[1]) };
-
-    const meta = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]');
-    return meta ? { 'X-CSRF-TOKEN': meta.content } : {};
-}
 
 async function request(method: 'GET' | 'POST' | 'DELETE'): Promise<void> {
     busy.value = true;

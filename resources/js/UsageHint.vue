@@ -8,7 +8,8 @@ const props = defineProps<{
     code: string;
 }>();
 
-const lines = computed(() => props.code.split('\n').map((text) => ({ text, comment: text.trimStart().startsWith('//') })));
+/** `//` comments in PHP, `#` comments in `.env` and shell snippets. */
+const lines = computed(() => props.code.split('\n').map((text) => ({ text, comment: /^\s*(\/\/|#)/.test(text) })));
 
 const { copy, copied, isSupported } = useClipboard({ legacy: true, copiedDuring: 1500 });
 </script>

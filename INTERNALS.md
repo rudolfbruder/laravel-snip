@@ -255,7 +255,8 @@ The suite uses `orchestra/testbench`. Test covers:
 | Task | File(s) |
 | --- | --- |
 | Change default redacted keys | `config/snip.php` |
-| Change what the Mail tab records | `Support/MailListener` (reads `MessageSent`) → `SnipManager::recordMail` → `MailList.vue` |
+| Change what the Mail tab records | `Support/MailListener` (reads `MessageSent`) → `SnipManager::recordMail` → `MailList.vue` / `MailDetail.vue` |
+| The `snip` mailer and its inbox | `Support/SnipMailTransport` (delivers nothing) → `MailListener` → `Support/MailInbox` (cache) → `MailInboxController` (`/_snip/mail`) |
 | Add a new capture kind (e.g. queries) | `SnipManager` (new array + methods) → middleware payload key → new types.ts type → new `*List.vue` → register in `SnipPanel.ce.vue` tab strip |
 | Lift the per-request limits | `config/snip.php` `limits.*` keys |
 | Render relations differently for Eloquent | `SnipDumper::dumpModel` |

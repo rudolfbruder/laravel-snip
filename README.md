@@ -258,6 +258,18 @@ Mail is only read, never held back, and only for users who pass the gate. Mail s
 
 Off by default; turn it on with `SNIP_MAIL=true`.
 
+#### Catching mail instead of sending it
+
+Set `MAIL_MAILER=snip` and the app's mail goes to the panel instead of anyone's inbox — like Mailpit or Mailtrap, without running anything. It works for every process: requests, `php artisan` commands and queue workers. The Mail tab gets an **Inbox** view that lists the newest 50 caught mails (kept for 24 hours in the default cache store), checks for new ones every few seconds while it is open, and has a button to empty it.
+
+```dotenv
+MAIL_MAILER=snip
+```
+
+The `snip` mailer is added for you; there is nothing to put in `config/mail.php`. Use it locally or on staging only: mail sent through it is never delivered, and everyone who passes the gate can read every caught mail, password-reset links included.
+
+When neither is switched on, the Mail tab shows these setup steps.
+
 ### Cache
 
 Browse the active cache store without a separate tool.

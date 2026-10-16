@@ -94,7 +94,8 @@ const storedPosInit = settings.value.persistPos ? readJson<Pos>(POS_STATE_KEY) :
 const open = ref<boolean>(storedOpenInit === true);
 const settingsOpen = ref<boolean>(false);
 const dataLayerEnabled = ref<boolean>(true);
-const mailEnabled = ref<boolean>(false);
+const mailRequestEnabled = ref<boolean>(false);
+const mailInboxUrl = ref<string | null>(null);
 const cacheEnabled = ref<boolean>(false);
 const queueEnabled = ref<boolean>(false);
 const queueUrl = ref<string | null>(null);
@@ -121,7 +122,6 @@ const visibleTabs = computed<Tab[]>(() =>
     ALL_TABS.filter((t) => {
         if (t === 'profiler') return profile.value !== null;
         if (t === 'inertia') return inertiaPage.value !== null;
-        if (t === 'mail') return mailEnabled.value;
         if (t === 'datalayer') return dataLayerEnabled.value;
         if (t === 'cache') return cacheEnabled.value;
         if (t === 'queue') return queueEnabled.value;
@@ -538,7 +538,8 @@ function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined
     timings.value = parsed.timings ?? [];
     milestones.value = parsed.milestones ?? [];
     mails.value = parsed.mails ?? [];
-    mailEnabled.value = parsed.config?.mail ?? false;
+    mailRequestEnabled.value = parsed.config?.mail ?? false;
+    mailInboxUrl.value = parsed.config?.mail_inbox_url ?? null;
     profile.value = parsed.profile ?? null;
     guestLinkUrl.value = parsed.config?.guest_link_url ?? null;
     viewingAsGuest.value = parsed.config?.guest ?? false;
@@ -553,9 +554,6 @@ function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined
     queueHorizon.value = parsed.config?.queue_horizon ?? false;
 
     if (profile.value === null && tab.value === 'profiler') {
-        tab.value = 'snips';
-    }
-    if (!mailEnabled.value && tab.value === 'mail') {
         tab.value = 'snips';
     }
     if (!dataLayerEnabled.value && tab.value === 'datalayer') {
@@ -1014,7 +1012,7 @@ function flashCopyState(state: 'copied' | 'failed'): void {
             </section>
 
             <section v-else-if="tab === 'mail'" class="panel__fill">
-                <MailList :mails="mails" />
+                <MailList :mails="mails" :request-enabled="mailRequestEnabled" :inbox-url="mailInboxUrl" />
             </section>
 
             <section v-else-if="tab === 'cache'" class="panel__scroll">

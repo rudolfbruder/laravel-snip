@@ -13,10 +13,15 @@ use Symfony\Component\Mime\Email;
 use Symfony\Component\Mime\Part\DataPart;
 
 /**
- * Records every mail the request sends for the panel's Mail tab: the envelope, the HTML and text
- * bodies, and the attachments by name and size. Only reads the message; delivery is left alone.
+ * Records mail for the panel's Mail tab: the envelope, the HTML and text bodies, and the attachments
+ * by name and size. Two places it can go:
  *
- * Mail queued for a worker is recorded only when the sync driver sends it inside the request.
+ *  - the current request's captures, when `snip.mail.enabled` is on and the user passes the gate.
+ *    Only reads the message; delivery is left alone. Mail queued for a worker shows up here only when
+ *    the sync driver sends it inside the request.
+ *  - the shared MailInbox, when the mail went through a mailer using the `snip` transport, which
+ *    delivers nothing. This works from any process (requests, artisan commands, queue workers); the
+ *    inbox is only read through the gated panel endpoint.
  */
 class MailListener
 {
@@ -34,14 +39,26 @@ class MailListener
     public function register(): void
     {
         $this->events->listen(MessageSent::class, function (MessageSent $event): void {
-            $manager = $this->app->make(SnipManager::class);
+            $inbox = $this->app->make(MailInbox::class);
+            $toInbox = $inbox->catches($event->data['mailer'] ?? $this->app->make('config')->get('mail.default'));
 
             // Checked before reading the message, so the body is never copied for users who cannot see it.
-            if (! $manager->canRecordMail()) {
+            $manager = $this->app->make(SnipManager::class);
+            $toRequest = $this->app->make('config')->get('snip.mail.enabled', false) && $manager->canRecordMail();
+
+            if (! $toInbox && ! $toRequest) {
                 return;
             }
 
-            $manager->recordMail($this->describe($event->message, $event->data));
+            $mail = $this->describe($event->message, $event->data);
+
+            if ($toRequest) {
+                $manager->recordMail($mail);
+            }
+
+            if ($toInbox) {
+                $inbox->push($mail + ['sent_at' => date(DATE_ATOM), 'origin' => $this->origin()]);
+            }
         });
     }
 
@@ -74,6 +91,20 @@ class MailListener
                 'inline' => $part->hasContentId(),
             ], $attachments),
         ];
+    }
+
+    /** What sent the mail, such as `POST /checkout` or `artisan orders:remind`. */
+    protected function origin(): string
+    {
+        $request = $this->app->bound('request') ? $this->app->make('request') : null;
+
+        if ($request !== null && $request->route() !== null) {
+            return $request->method().' /'.ltrim($request->path(), '/');
+        }
+
+        $command = $_SERVER['argv'][1] ?? null;
+
+        return is_string($command) && $command !== '' ? 'artisan '.$command : 'console';
     }
 
     /** The Mailable or Notification class that built the mail, when it was one. */

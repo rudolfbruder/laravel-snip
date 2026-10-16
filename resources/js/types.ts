@@ -39,8 +39,12 @@ export type SnipMailAttachment = {
     inline: boolean;
 };
 
-/** A mail the request sent. Addresses are formatted like `Name <email>`. */
+/**
+ * A sent mail. Addresses are formatted like `Name <email>`. Mail the request sent has `time_ms`;
+ * mail from the inbox has `id`, `sent_at` and `origin` instead.
+ */
 export type SnipMail = {
+    id?: string;
     subject: string | null;
     from: string[];
     to: string[];
@@ -53,13 +57,30 @@ export type SnipMail = {
     html: string | null;
     text: string | null;
     attachments: SnipMailAttachment[];
-    time_ms: number;
+    time_ms?: number;
+    /** ISO 8601. */
+    sent_at?: string | null;
+    /** What sent it, such as `POST /checkout` or `artisan orders:remind`. */
+    origin?: string | null;
+};
+
+/** An inbox mail as the list shows it; the full mail is fetched when it is opened. */
+export type SnipMailSummary = {
+    id: string;
+    subject: string | null;
+    /** To, cc and bcc together. */
+    to: string[];
+    sent_at: string | null;
+    origin: string | null;
+    attachments: number;
 };
 
 export type SnipConfig = {
     datalayer: boolean;
     profiler?: boolean;
     mail?: boolean;
+    /** The inbox endpoint, set when the app sends its mail through the `snip` mailer. */
+    mail_inbox_url?: string | null;
     /** The guest-link endpoint, set only for users who pass the gate itself. */
     guest_link_url?: string | null;
     /** True when the viewer got in through a guest link. */

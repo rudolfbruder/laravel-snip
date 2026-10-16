@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RudolfBruder\LaravelSnip;
 
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
+use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -12,6 +13,7 @@ use RudolfBruder\LaravelSnip\Console\InstallCommand;
 use RudolfBruder\LaravelSnip\Console\PublishCommand;
 use RudolfBruder\LaravelSnip\Http\Controllers\CacheValueController;
 use RudolfBruder\LaravelSnip\Http\Controllers\GuestLinkController;
+use RudolfBruder\LaravelSnip\Http\Controllers\MailInboxController;
 use RudolfBruder\LaravelSnip\Http\Controllers\QueueController;
 use RudolfBruder\LaravelSnip\Http\Middleware\InjectSnip;
 use RudolfBruder\LaravelSnip\Http\Renderers\SnippetRenderer;
@@ -21,12 +23,14 @@ use RudolfBruder\LaravelSnip\Support\CacheSnapshot;
 use RudolfBruder\LaravelSnip\Support\CallerResolver;
 use RudolfBruder\LaravelSnip\Support\CapturingDecision;
 use RudolfBruder\LaravelSnip\Support\GuestAccess;
+use RudolfBruder\LaravelSnip\Support\MailInbox;
 use RudolfBruder\LaravelSnip\Support\MailListener;
 use RudolfBruder\LaravelSnip\Support\PayloadBuilder;
 use RudolfBruder\LaravelSnip\Support\PendingPayloadStore;
 use RudolfBruder\LaravelSnip\Support\ProfilerListeners;
 use RudolfBruder\LaravelSnip\Support\QueueSnapshot;
 use RudolfBruder\LaravelSnip\Support\SnipDumper;
+use RudolfBruder\LaravelSnip\Support\SnipMailTransport;
 
 class SnipServiceProvider extends ServiceProvider
 {
@@ -44,7 +48,7 @@ class SnipServiceProvider extends ServiceProvider
         $this->registerRoutes();
         $this->app->make(InertiaIntegration::class)->register();
         $this->registerProfiler();
-        $this->registerMailListener();
+        $this->registerMail();
 
         if ($this->app->runningInConsole()) {
             $this->registerPublishing();
@@ -67,6 +71,7 @@ class SnipServiceProvider extends ServiceProvider
         $this->app->scoped(PayloadBuilder::class);
         $this->app->scoped(CapturingDecision::class);
         $this->app->scoped(GuestAccess::class);
+        $this->app->scoped(MailInbox::class);
         $this->app->scoped(PendingPayloadStore::class);
         $this->app->scoped(CallerResolver::class);
         $this->app->scoped(SnippetRenderer::class);
@@ -81,9 +86,23 @@ class SnipServiceProvider extends ServiceProvider
         }
     }
 
-    protected function registerMailListener(): void
+    /**
+     * The `snip` transport is registered even with the package switched off: an app whose mailer
+     * uses it would otherwise fail to send at all.
+     */
+    protected function registerMail(): void
     {
-        if ($this->app['config']->get('snip.enabled', true) && $this->app['config']->get('snip.mail.enabled', false)) {
+        $config = $this->app['config'];
+
+        if (! $config->has('mail.mailers.'.SnipMailTransport::NAME)) {
+            $config->set('mail.mailers.'.SnipMailTransport::NAME, ['transport' => SnipMailTransport::NAME]);
+        }
+
+        $this->callAfterResolving('mail.manager', function (MailManager $manager): void {
+            $manager->extend(SnipMailTransport::NAME, fn (): SnipMailTransport => new SnipMailTransport());
+        });
+
+        if ($config->get('snip.enabled', true)) {
             $this->app->make(MailListener::class)->register();
         }
     }
@@ -111,6 +130,9 @@ class SnipServiceProvider extends ServiceProvider
             ->group(function (): void {
                 Route::get('/cache', [CacheValueController::class, 'show'])->name('snip.cache.show');
                 Route::get('/queue', [QueueController::class, 'index'])->name('snip.queue.index');
+                Route::get('/mail', [MailInboxController::class, 'index'])->name('snip.mail.index');
+                Route::delete('/mail', [MailInboxController::class, 'destroy'])->name('snip.mail.destroy');
+                Route::get('/mail/{id}', [MailInboxController::class, 'show'])->name('snip.mail.show');
                 Route::get('/guest-link', [GuestLinkController::class, 'show'])->name('snip.guest-link.show');
                 Route::post('/guest-link', [GuestLinkController::class, 'store'])->name('snip.guest-link.store');
                 Route::delete('/guest-link', [GuestLinkController::class, 'destroy'])->name('snip.guest-link.destroy');

@@ -175,6 +175,11 @@ return [
     | across a redirect, flashed into the session. Set `SNIP_MAIL=true` to
     | turn it on.
     |
+    | Separately, `MAIL_MAILER=snip` catches mail instead of sending it, from
+    | any process (requests, artisan commands, queue workers), and shows it
+    | in the tab's Inbox. The `snip` mailer is registered by the package; use
+    | it locally or on staging only, as caught mail is never delivered.
+    |
     */
 
     'mail' => [

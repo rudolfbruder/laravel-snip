@@ -8,14 +8,6 @@ use Illuminate\Mail\Message;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
-use RudolfBruder\LaravelSnip\Support\MailListener;
-
-function snipPayloadFrom(string $body): array
-{
-    preg_match('/<laravel-snip data-payload="([^"]*)"/', $body, $match);
-
-    return json_decode(html_entity_decode($match[1] ?? '', ENT_QUOTES, 'UTF-8'), true) ?? [];
-}
 
 class SnipTestWelcomeMail extends Mailable
 {
@@ -45,11 +37,9 @@ it('is off by default', function () {
         ->and($response->getContent())->not->toContain('<laravel-snip');
 });
 
-/** The listener is registered when the app boots, so switching it on in a test means registering it too. */
 function enableSnipMail(): void
 {
     config()->set('snip.mail.enabled', true);
-    app(MailListener::class)->register();
 }
 
 it('shows the mail a request sends, which alone is enough to inject the panel', function () {
