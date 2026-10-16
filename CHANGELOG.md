@@ -4,6 +4,8 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.6] - 2026-10-16
+
 ### Added
 - `SNIP_MAIL_CATCH=true` catches every mail instead of sending it, whichever mailer sends it. `MAIL_MAILER=snip` only caught the default mailer's mail, so apps that pick a mailer per mail (`Mail::mailer('shop_sk')`) still sent theirs.
 - The playground shows the Mail tab's Inbox, with a button that catches a new mail the way a queue worker would.
