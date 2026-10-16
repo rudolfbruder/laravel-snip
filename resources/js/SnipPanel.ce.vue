@@ -7,25 +7,26 @@ import MilestoneList from './MilestoneList.vue';
 import DataLayerList from './DataLayerList.vue';
 import CacheList from './CacheList.vue';
 import QueueList from './QueueList.vue';
+import MailList from './MailList.vue';
 import InertiaProps from './InertiaProps.vue';
 import ProfilerReport from './ProfilerReport.vue';
 import GuestLink from './GuestLink.vue';
 import UsageHint from './UsageHint.vue';
-import type { DataLayerEvent, InertiaDeferredProps, InertiaPage, SnipCache, SnipEntry, SnipMilestone, SnipPayload, SnipProfile, SnipTiming } from './types';
+import type { DataLayerEvent, InertiaDeferredProps, InertiaPage, SnipCache, SnipEntry, SnipMail, SnipMilestone, SnipPayload, SnipProfile, SnipTiming } from './types';
 import { formatBytes, shortenFile } from './format';
 import { installDataLayerHook, isCustomEvent } from './dataLayer';
 import { inertiaPageFromEvent, readInitialInertiaPage } from './inertia';
 import { readStorage, writeStorage } from './storage';
 import { useTheme } from './theme';
 
-type Tab = 'snips' | 'timings' | 'milestones' | 'profiler' | 'inertia' | 'datalayer' | 'cache' | 'queue';
+type Tab = 'snips' | 'timings' | 'milestones' | 'profiler' | 'inertia' | 'mail' | 'datalayer' | 'cache' | 'queue';
 
 const TAB_STORAGE_KEY = 'laravel-snip:tab';
 const SETTINGS_KEY = 'laravel-snip:settings';
 const OPEN_STATE_KEY = 'laravel-snip:state:open';
 const SIZE_STATE_KEY = 'laravel-snip:state:size';
 const POS_STATE_KEY = 'laravel-snip:state:pos';
-const ALL_TABS: Tab[] = ['snips', 'timings', 'milestones', 'profiler', 'inertia', 'datalayer', 'cache', 'queue'];
+const ALL_TABS: Tab[] = ['snips', 'timings', 'milestones', 'profiler', 'inertia', 'mail', 'datalayer', 'cache', 'queue'];
 
 type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
@@ -93,6 +94,7 @@ const storedPosInit = settings.value.persistPos ? readJson<Pos>(POS_STATE_KEY) :
 const open = ref<boolean>(storedOpenInit === true);
 const settingsOpen = ref<boolean>(false);
 const dataLayerEnabled = ref<boolean>(true);
+const mailEnabled = ref<boolean>(false);
 const cacheEnabled = ref<boolean>(false);
 const queueEnabled = ref<boolean>(false);
 const queueUrl = ref<string | null>(null);
@@ -102,6 +104,7 @@ const queueHorizon = ref<boolean>(false);
 const entries = ref<SnipEntry[]>([]);
 const timings = ref<SnipTiming[]>([]);
 const milestones = ref<SnipMilestone[]>([]);
+const mails = ref<SnipMail[]>([]);
 const profile = ref<SnipProfile | null>(null);
 const guestLinkUrl = ref<string | null>(null);
 const viewingAsGuest = ref<boolean>(false);
@@ -118,6 +121,7 @@ const visibleTabs = computed<Tab[]>(() =>
     ALL_TABS.filter((t) => {
         if (t === 'profiler') return profile.value !== null;
         if (t === 'inertia') return inertiaPage.value !== null;
+        if (t === 'mail') return mailEnabled.value;
         if (t === 'datalayer') return dataLayerEnabled.value;
         if (t === 'cache') return cacheEnabled.value;
         if (t === 'queue') return queueEnabled.value;
@@ -533,6 +537,8 @@ function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined
     entries.value = parsed.snips ?? [];
     timings.value = parsed.timings ?? [];
     milestones.value = parsed.milestones ?? [];
+    mails.value = parsed.mails ?? [];
+    mailEnabled.value = parsed.config?.mail ?? false;
     profile.value = parsed.profile ?? null;
     guestLinkUrl.value = parsed.config?.guest_link_url ?? null;
     viewingAsGuest.value = parsed.config?.guest ?? false;
@@ -547,6 +553,9 @@ function applyParsedPayload(parsed: SnipPayload | SnipEntry[] | null | undefined
     queueHorizon.value = parsed.config?.queue_horizon ?? false;
 
     if (profile.value === null && tab.value === 'profiler') {
+        tab.value = 'snips';
+    }
+    if (!mailEnabled.value && tab.value === 'mail') {
         tab.value = 'snips';
     }
     if (!dataLayerEnabled.value && tab.value === 'datalayer') {
@@ -620,6 +629,7 @@ function pickInitialTab(): void {
         ['timings', timings.value.length],
         ['milestones', milestones.value.length],
         ['profiler', profile.value !== null ? 1 : 0],
+        ['mail', mails.value.length],
         ['datalayer', dataLayerEnabled.value ? dataLayerEvents.value.filter((e) => isCustomEvent(e.payload)).length : 0],
         ['cache', cacheEnabled.value ? (cache.value?.keys.length ?? 0) : 0],
         ['queue', queueEnabled.value ? 1 : 0],
@@ -671,7 +681,7 @@ const cacheKeyCount = computed<number>(
 );
 
 const totalCount = computed<number>(
-    () => entries.value.length + timings.value.length + milestones.value.length + (profile.value !== null ? 1 : 0) + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0) + (inertiaPage.value !== null ? 1 : 0),
+    () => entries.value.length + timings.value.length + milestones.value.length + mails.value.length + (profile.value !== null ? 1 : 0) + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0) + (inertiaPage.value !== null ? 1 : 0),
 );
 
 const hasContent = computed<boolean>(() => totalCount.value > 0);
@@ -682,6 +692,7 @@ const TAB_LABELS: Record<Tab, string> = {
     milestones: 'Milestones',
     profiler: 'Profiler',
     inertia: 'Inertia',
+    mail: 'Mail',
     datalayer: 'DataLayer',
     cache: 'Cache',
     queue: 'Queue',
@@ -698,6 +709,7 @@ function tabCount(t: Tab): number {
         milestones: milestones.value.length,
         profiler: 0,
         inertia: inertiaPropCount.value,
+        mail: mails.value.length,
         datalayer: customDataLayerCount.value,
         cache: cacheKeyCount.value,
         queue: 0,
@@ -999,6 +1011,10 @@ function flashCopyState(state: 'copied' | 'failed'): void {
 
             <section v-else-if="tab === 'inertia'" class="panel__scroll">
                 <InertiaProps v-if="inertiaPage" :page="inertiaPage" :deferred="inertiaDeferred" />
+            </section>
+
+            <section v-else-if="tab === 'mail'" class="panel__fill">
+                <MailList :mails="mails" />
             </section>
 
             <section v-else-if="tab === 'cache'" class="panel__scroll">
@@ -1696,6 +1712,13 @@ function flashCopyState(state: 'copied' | 'failed'): void {
     grid-template-columns: 240px 1fr;
     flex: 1;
     min-height: 0;
+    background: var(--snip-bg);
+}
+
+.panel__fill {
+    flex: 1;
+    min-height: 0;
+    display: flex;
     background: var(--snip-bg);
 }
 

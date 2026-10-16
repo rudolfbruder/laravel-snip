@@ -13,7 +13,7 @@ use RudolfBruder\LaravelSnip\Support\PendingPayloadStore;
 use RudolfBruder\LaravelSnip\Support\SnipDumper;
 
 /**
- * Per-request collector for snip entries, timings, and milestones.
+ * Per-request collector for snip entries, timings, milestones, and sent mail.
  *
  * The manager owns *only* the collection state. Capturing eligibility,
  * caller resolution, dumping, and session-flash plumbing live in dedicated
@@ -32,6 +32,9 @@ class SnipManager
 
     /** @var array<int, array{label: string, file: ?string, line: ?int, time_ms: float}> */
     protected array $milestones = [];
+
+    /** @var array<int, array<string, mixed>> Mail sent during the request, recorded by MailListener. */
+    protected array $mails = [];
 
     /** @var array<string, float> */
     protected array $startMarks = [];
@@ -121,6 +124,24 @@ class SnipManager
         return $this;
     }
 
+    public function canRecordMail(): bool
+    {
+        // Configs published before mail capture existed have no limit for it.
+        return $this->canRecord('mails', count($this->mails), default: 50);
+    }
+
+    /** @param  array<string, mixed>  $mail  As built by MailListener. */
+    public function recordMail(array $mail): self
+    {
+        if (! $this->canRecordMail()) {
+            return $this;
+        }
+
+        $this->mails[] = $mail + ['time_ms' => $this->elapsedMs()];
+
+        return $this;
+    }
+
     /**
      * The request's profiler, for the calls without a shortcut here (addContext, recordCall,
      * measuredPipes, markControllerStarted, ...).
@@ -188,11 +209,22 @@ class SnipManager
         return count($this->milestones);
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function mails(): array
+    {
+        return $this->mails;
+    }
+
+    public function mailsCount(): int
+    {
+        return count($this->mails);
+    }
+
     /**
      * Snapshot of the current request's captures, suitable for round-tripping
      * across a redirect via session flash.
      *
-     * @return array{entries: array, timings: array, milestones: array}
+     * @return array{entries: array, timings: array, milestones: array, mails: array}
      */
     public function payload(): array
     {
@@ -200,6 +232,7 @@ class SnipManager
             'entries' => $this->entries,
             'timings' => $this->timings,
             'milestones' => $this->milestones,
+            'mails' => $this->mails,
         ];
     }
 
@@ -208,7 +241,7 @@ class SnipManager
      * collection state. Used directly when replaying a known payload, and
      * indirectly via ensureHydratedFromSession().
      *
-     * @param array{entries?: array, timings?: array, milestones?: array} $payload
+     * @param array{entries?: array, timings?: array, milestones?: array, mails?: array} $payload
      */
     public function replay(array $payload): self
     {
@@ -222,6 +255,10 @@ class SnipManager
 
         foreach ((array) ($payload['milestones'] ?? []) as $milestone) {
             $this->milestones[] = $milestone;
+        }
+
+        foreach ((array) ($payload['mails'] ?? []) as $mail) {
+            $this->mails[] = $mail;
         }
 
         return $this;
@@ -270,6 +307,7 @@ class SnipManager
         $this->entries = [];
         $this->timings = [];
         $this->milestones = [];
+        $this->mails = [];
         $this->startMarks = [];
         $this->hydratedFromSession = false;
         $this->decision->reset();
@@ -287,13 +325,13 @@ class SnipManager
         return $this->decision->allows();
     }
 
-    protected function canRecord(string $kind, int $currentCount): bool
+    protected function canRecord(string $kind, int $currentCount, ?int $default = null): bool
     {
         if (! $this->isCapturing()) {
             return false;
         }
 
-        $max = (int) $this->config->get("snip.limits.max_{$kind}_per_request");
+        $max = (int) $this->config->get("snip.limits.max_{$kind}_per_request", $default);
 
         return $currentCount < $max;
     }

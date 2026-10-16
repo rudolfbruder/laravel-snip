@@ -32,9 +32,34 @@ export type SnipMilestone = {
     time_ms: number;
 };
 
+export type SnipMailAttachment = {
+    name: string | null;
+    content_type: string;
+    bytes: number;
+    inline: boolean;
+};
+
+/** A mail the request sent. Addresses are formatted like `Name <email>`. */
+export type SnipMail = {
+    subject: string | null;
+    from: string[];
+    to: string[];
+    cc: string[];
+    bcc: string[];
+    reply_to: string[];
+    mailer: string | null;
+    /** The Mailable or Notification class that built it. */
+    source: string | null;
+    html: string | null;
+    text: string | null;
+    attachments: SnipMailAttachment[];
+    time_ms: number;
+};
+
 export type SnipConfig = {
     datalayer: boolean;
     profiler?: boolean;
+    mail?: boolean;
     /** The guest-link endpoint, set only for users who pass the gate itself. */
     guest_link_url?: string | null;
     /** True when the viewer got in through a guest link. */
@@ -143,6 +168,8 @@ export type SnipPayload = {
     snips: SnipEntry[];
     timings: SnipTiming[];
     milestones: SnipMilestone[];
+    /** Absent from payloads of older versions. */
+    mails?: SnipMail[];
     profile?: SnipProfile | null;
     cache?: SnipCache;
     config?: SnipConfig;

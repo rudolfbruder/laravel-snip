@@ -179,6 +179,14 @@
             </div>
         </div>
         <div class="row">
+            <span class="row__name" id="mail-label">Mail<span class="row__hint">Mail the request sent; off hides the tab</span></span>
+            <div class="options" role="radiogroup" aria-labelledby="mail-label">
+                <label><input type="radio" name="mail" value="off"> Off</label>
+                <label><input type="radio" name="mail" value="empty" checked> Empty</label>
+                <label><input type="radio" name="mail" value="filled"> Filled</label>
+            </div>
+        </div>
+        <div class="row">
             <span class="row__name" id="profiler-label">Profiler<span class="row__hint">Off hides the tab</span></span>
             <div class="options" role="radiogroup" aria-labelledby="profiler-label">
                 <label><input type="radio" name="profiler" value="off"> Off</label>
@@ -231,6 +239,21 @@
         timings: [
             { label: 'search', file: 'app/Repositories/ProductRepository.php', line: 17, start_ms: 22.5, duration_ms: 41.2 },
             { label: 'build-payload', file: 'app/Http/Controllers/OrderController.php', line: 51, start_ms: 0, duration_ms: 68.9 },
+        ],
+        mails: [
+            {
+                subject: 'Your order #1042 has shipped', from: ['"Shop" <hello@shop.test>'], to: ['"Jane Doe" <jane@example.com>'],
+                cc: [], bcc: ['archive@shop.test'], reply_to: ['support@shop.test'], mailer: 'smtp', source: 'App\\Mail\\OrderShipped',
+                html: '<div style="font-family:sans-serif;max-width:480px;margin:24px auto"><h1 style="color:#1d4ed8">On its way!</h1><p>Hi Jane, order <b>#1042</b> left our warehouse today.</p><p><a href="#">Track your parcel</a></p></div>',
+                text: 'On its way!\n\nHi Jane, order #1042 left our warehouse today.\n\nTrack your parcel: https://shop.test/track/1042',
+                attachments: [{ name: 'invoice-1042.pdf', content_type: 'application/pdf', bytes: 48213, inline: false }],
+                time_ms: 64.2,
+            },
+            {
+                subject: 'New order received', from: ['hello@shop.test'], to: ['orders@shop.test', 'boss@shop.test'],
+                cc: [], bcc: [], reply_to: [], mailer: 'smtp', source: 'App\\Notifications\\NewOrder',
+                html: null, text: 'Order #1042 for 129.90 EUR was paid by Jane Doe.', attachments: [], time_ms: 70.1,
+            },
         ],
         milestones: [
             { label: 'discount-applied', file: 'app/Services/Pricing.php', line: 90, time_ms: 33.1 },
@@ -358,8 +381,9 @@
             snips: pick('snips') === 'filled' ? SAMPLES.snips : [],
             timings: pick('timings') === 'filled' ? SAMPLES.timings : [],
             milestones: pick('milestones') === 'filled' ? SAMPLES.milestones : [],
+            mails: pick('mail') === 'filled' ? SAMPLES.mails : [],
             profile: pick('profiler') === 'off' ? null : profile(pick('profiler') === 'filled'),
-            config: { datalayer: false },
+            config: { datalayer: false, mail: pick('mail') !== 'off' },
         };
 
         // The panel reads its payload and the initial Inertia page once on mount, so swap in fresh elements.
@@ -380,7 +404,7 @@
         el.setAttribute('data-payload', JSON.stringify(payload));
         document.body.appendChild(el);
 
-        const empty = !payload.snips.length && !payload.timings.length && !payload.milestones.length && !payload.profile && !inertiaPage;
+        const empty = !payload.snips.length && !payload.timings.length && !payload.milestones.length && !payload.mails.length && !payload.profile && !inertiaPage;
         document.getElementById('hidden-note').hidden = !empty;
     }
 

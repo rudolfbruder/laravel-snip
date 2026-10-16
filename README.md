@@ -250,6 +250,14 @@ Props are badged by how Inertia loads them:
 
 The tab follows SPA navigation, back/forward and partial reloads. It reads the page object Inertia already sends to the browser, so it needs no setup and puts nothing extra in the response. Works with Inertia v1, v2 and v3.
 
+### Mail
+
+Every mail the request sends — Mailables, notifications, `Mail::raw()` — with its sender, recipients (cc and bcc too), subject, the mailer that sent it and the Mailable or Notification class that built it. The body opens as a rendered HTML preview, as plain text, or as HTML source; embedded images show in the preview, and attachments are listed by name and size.
+
+Mail is only read, never held back, and only for users who pass the gate. Mail sent before a redirect shows on the page you land on. Queued mail is sent by a worker, outside the request, so it only shows up with the `sync` queue driver. Bodies over 512 KB are cut, and at most `limits.max_mails_per_request` (50) mails are kept.
+
+Off by default; turn it on with `SNIP_MAIL=true`.
+
 ### Cache
 
 Browse the active cache store without a separate tool.
@@ -303,6 +311,7 @@ Most-used knobs:
 | `pending_redirects` | `true` | Flash captures across redirect chains. |
 | `redact_keys` | `[password, token, secret, …]` | Keys replaced with `***REDACTED***`. |
 | `cache.enabled` / `queue.enabled` / `datalayer` | `true` | Toggle individual tabs. |
+| `mail.enabled` | `env('SNIP_MAIL', false)` | Mail tab and the listener behind it. |
 | `profiler.enabled` | `env('SNIP_PROFILER', false)` | Profiler tab and the event listeners behind it. |
 | `guest_links.enabled` / `guest_links.ttl` | `true` / `120` | Guest links from the settings menu, and how many minutes they last. |
 | `limits.*` | various | Depth / array / string / per-kind hard caps. |

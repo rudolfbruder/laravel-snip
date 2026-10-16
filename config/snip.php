@@ -162,6 +162,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Mail tab
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, every mail the request sends is shown in a "Mail" tab:
+    | sender and recipients, subject, the HTML and text bodies, and the
+    | attachments by name and size. Mail is only read, never held back, and
+    | only for users who pass the gate. Mail sent by a queue worker is not
+    | part of the request, so it only shows up when the sync driver sends it.
+    |
+    | Off by default: the bodies are embedded in the page for gated users and,
+    | across a redirect, flashed into the session. Set `SNIP_MAIL=true` to
+    | turn it on.
+    |
+    */
+
+    'mail' => [
+        'enabled' => env('SNIP_MAIL', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Cache tab
     |--------------------------------------------------------------------------
     |
@@ -289,6 +310,7 @@ return [
         'max_entries_per_request' => 200,
         'max_timings_per_request' => 500,
         'max_milestones_per_request' => 1000,
+        'max_mails_per_request' => 50,
     ],
 
     /*

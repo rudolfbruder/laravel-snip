@@ -44,10 +44,12 @@ class PayloadBuilder
             'snips' => $this->manager->entries(),
             'timings' => $this->manager->timings(),
             'milestones' => $this->manager->milestones(),
+            'mails' => $this->manager->mails(),
             'profile' => $this->profiler->report(request(), $response),
             'config' => [
                 'datalayer' => (bool) $this->config->get('snip.datalayer', true),
                 'profiler' => $this->profiler->isEnabled(),
+                'mail' => (bool) $this->config->get('snip.mail.enabled', false),
                 // Only users who pass the gate itself may manage the guest link.
                 'guest_link_url' => $this->guestAccess->enabled() && $this->decision->allowsByGate()
                     ? '/'.trim((string) $this->config->get('snip.cache.route_prefix', '_snip'), '/').'/guest-link'

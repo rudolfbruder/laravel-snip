@@ -99,7 +99,8 @@ class InjectSnip
     {
         return $this->manager->count()
             + $this->manager->timingsCount()
-            + $this->manager->milestonesCount();
+            + $this->manager->milestonesCount()
+            + $this->manager->mailsCount();
     }
 
     /**

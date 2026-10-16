@@ -32,7 +32,7 @@ class PendingPayloadStore
         return (bool) $this->config->get('snip.pending_redirects', true);
     }
 
-    /** @return array{entries?: array, timings?: array, milestones?: array}|null */
+    /** @return array{entries?: array, timings?: array, milestones?: array, mails?: array}|null */
     public function pull(Request $request): ?array
     {
         if (! $this->canAccess($request)) {
@@ -57,7 +57,7 @@ class PendingPayloadStore
         $request->session()->forget(Snip::PENDING_SESSION_KEY);
     }
 
-    /** @param array{entries?: array, timings?: array, milestones?: array} $payload */
+    /** @param array{entries?: array, timings?: array, milestones?: array, mails?: array} $payload */
     public function flash(Request $request, array $payload): void
     {
         if (! $this->canAccess($request)) {

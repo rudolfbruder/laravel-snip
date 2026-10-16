@@ -21,6 +21,7 @@ use RudolfBruder\LaravelSnip\Support\CacheSnapshot;
 use RudolfBruder\LaravelSnip\Support\CallerResolver;
 use RudolfBruder\LaravelSnip\Support\CapturingDecision;
 use RudolfBruder\LaravelSnip\Support\GuestAccess;
+use RudolfBruder\LaravelSnip\Support\MailListener;
 use RudolfBruder\LaravelSnip\Support\PayloadBuilder;
 use RudolfBruder\LaravelSnip\Support\PendingPayloadStore;
 use RudolfBruder\LaravelSnip\Support\ProfilerListeners;
@@ -43,6 +44,7 @@ class SnipServiceProvider extends ServiceProvider
         $this->registerRoutes();
         $this->app->make(InertiaIntegration::class)->register();
         $this->registerProfiler();
+        $this->registerMailListener();
 
         if ($this->app->runningInConsole()) {
             $this->registerPublishing();
@@ -76,6 +78,13 @@ class SnipServiceProvider extends ServiceProvider
     {
         if ($this->app->make(Profiler::class)->configured()) {
             $this->app->make(ProfilerListeners::class)->register();
+        }
+    }
+
+    protected function registerMailListener(): void
+    {
+        if ($this->app['config']->get('snip.enabled', true) && $this->app['config']->get('snip.mail.enabled', false)) {
+            $this->app->make(MailListener::class)->register();
         }
     }
 
