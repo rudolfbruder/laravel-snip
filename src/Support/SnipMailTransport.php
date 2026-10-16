@@ -8,9 +8,9 @@ use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\AbstractTransport;
 
 /**
- * The `snip` mail transport: a middleman that delivers nothing. Mail sent through a mailer that uses
- * it is kept in the MailInbox by MailListener instead, from requests, artisan commands and queue
- * workers alike, and read in the panel's Mail tab.
+ * The `snip` mail transport, behind `MAIL_MAILER=snip`: delivers nothing. MailListener stops mail sent
+ * through it before it gets here and keeps it in the MailInbox; the transport only makes sure that
+ * nothing leaves if the listener is not registered (the package switched off).
  */
 class SnipMailTransport extends AbstractTransport
 {

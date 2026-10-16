@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace RudolfBruder\LaravelSnip\Support;
 
+use Closure;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use RudolfBruder\LaravelSnip\SnipManager;
 use Symfony\Component\Mime\Address;
@@ -19,9 +21,10 @@ use Symfony\Component\Mime\Part\DataPart;
  *  - the current request's captures, when `snip.mail.enabled` is on and the user passes the gate.
  *    Only reads the message; delivery is left alone. Mail queued for a worker shows up here only when
  *    the sync driver sends it inside the request.
- *  - the shared MailInbox, when the mail went through a mailer using the `snip` transport, which
- *    delivers nothing. This works from any process (requests, artisan commands, queue workers); the
- *    inbox is only read through the gated panel endpoint.
+ *  - the shared MailInbox, when the inbox catches the mail (see MailInbox::catches()). Caught mail
+ *    is stopped before it is sent, whichever mailer the app picked. This works from any process
+ *    (requests, artisan commands, queue workers); the inbox is only read through the gated panel
+ *    endpoint.
  */
 class MailListener
 {
@@ -38,28 +41,44 @@ class MailListener
 
     public function register(): void
     {
-        $this->events->listen(MessageSent::class, function (MessageSent $event): void {
+        // Returning false cancels the send, so caught mail never reaches a transport and fires no
+        // MessageSent; it is recorded for the request here instead.
+        $this->events->listen(MessageSending::class, function (MessageSending $event): ?bool {
             $inbox = $this->app->make(MailInbox::class);
-            $toInbox = $inbox->catches($event->data['mailer'] ?? $this->app->make('config')->get('mail.default'));
 
-            // Checked before reading the message, so the body is never copied for users who cannot see it.
-            $manager = $this->app->make(SnipManager::class);
-            $toRequest = $this->app->make('config')->get('snip.mail.enabled', false) && $manager->canRecordMail();
-
-            if (! $toInbox && ! $toRequest) {
-                return;
+            if (! $inbox->catches($event->data['mailer'] ?? $this->app->make('config')->get('mail.default'))) {
+                return null;
             }
 
             $mail = $this->describe($event->message, $event->data);
+            $this->recordForRequest(fn (): array => $mail);
+            $inbox->push($mail + ['sent_at' => date(DATE_ATOM), 'origin' => $this->origin()]);
 
-            if ($toRequest) {
-                $manager->recordMail($mail);
-            }
-
-            if ($toInbox) {
-                $inbox->push($mail + ['sent_at' => date(DATE_ATOM), 'origin' => $this->origin()]);
-            }
+            return false;
         });
+
+        $this->events->listen(MessageSent::class, function (MessageSent $event): void {
+            $this->recordForRequest(fn (): array => $this->describe($event->message, $event->data));
+        });
+    }
+
+    /**
+     * Adds the mail to the request's captures when the Mail tab shows them and the user may see them.
+     * Checked before the mail is described, so the body is never copied for users who cannot see it.
+     *
+     * @param  Closure(): array<string, mixed>  $describe
+     */
+    protected function recordForRequest(Closure $describe): void
+    {
+        if (! $this->app->make('config')->get('snip.mail.enabled', false)) {
+            return;
+        }
+
+        $manager = $this->app->make(SnipManager::class);
+
+        if ($manager->canRecordMail()) {
+            $manager->recordMail($describe());
+        }
     }
 
     /**

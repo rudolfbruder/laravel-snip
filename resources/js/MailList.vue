@@ -23,22 +23,26 @@ const REQUEST_USAGE = `// Any mail the request sends shows up here
 Mail::to($user)->send(new OrderShipped($order));
 $user->notify(new InvoicePaid($invoice));`;
 
-const INBOX_USAGE = `# .env: catch every mail instead of sending it,
-# from requests, artisan commands and queue workers
-MAIL_MAILER=snip`;
+const INBOX_USAGE = `# Queue workers read the config once, when they start.
+# Restart them after turning catching on, or their mail is
+# still sent (php artisan horizon:terminate with Horizon)
+php artisan queue:restart`;
 
 const SETUP = `# .env, pick one or both:
 
 # Show the mail each request sends. It is still delivered.
 SNIP_MAIL=true
 
-# Catch every mail instead of sending it, from requests,
-# artisan commands and queue workers. Nothing reaches a
-# real inbox, so use it locally or on staging only.
-MAIL_MAILER=snip
+# Catch every mail instead of sending it, whichever mailer
+# sends it, from requests, artisan commands and queue
+# workers. Nothing reaches a real inbox, so use it locally
+# or on staging only.
+SNIP_MAIL_CATCH=true
 
-# If the config is cached, refresh it afterwards
-php artisan config:clear`;
+# Then refresh the config, and restart queue workers so
+# they pick it up (php artisan horizon:terminate with Horizon)
+php artisan config:clear
+php artisan queue:restart`;
 
 const configured = computed<boolean>(() => props.requestEnabled || props.inboxUrl !== null);
 
@@ -172,7 +176,7 @@ function clock(iso: string | null): string {
                     </button>
                 </div>
                 <div v-if="source === 'inbox'" class="toolbar__actions">
-                    <span class="toolbar__note">caught by the <code>snip</code> mailer, never sent</span>
+                    <span class="toolbar__note">caught instead of sent</span>
                     <button type="button" class="toolbar__btn" title="Check for new mail" @click="loadInbox">↻</button>
                     <button type="button" class="toolbar__btn" :disabled="summaries.length === 0" title="Delete every caught mail" @click="clearInbox">clear</button>
                 </div>
@@ -226,7 +230,7 @@ function clock(iso: string | null): string {
 
         <template v-else>
             <div v-if="inboxStatus === 'loaded' && summaries.length === 0" class="empty">
-                <UsageHint message="No mail caught yet. New mail shows up here within a few seconds." :code="INBOX_USAGE" />
+                <UsageHint message="No mail caught yet. Send one from a page, a command or a queued job; it shows up here within a few seconds." :code="INBOX_USAGE" />
             </div>
             <p v-else-if="selected === null" class="empty muted">{{ selectedId ? 'Loading…' : '' }}</p>
             <p v-else-if="typeof selected === 'string'" class="empty muted">{{ selected }}</p>

@@ -175,15 +175,17 @@ return [
     | across a redirect, flashed into the session. Set `SNIP_MAIL=true` to
     | turn it on.
     |
-    | Separately, `MAIL_MAILER=snip` catches mail instead of sending it, from
-    | any process (requests, artisan commands, queue workers), and shows it
-    | in the tab's Inbox. The `snip` mailer is registered by the package; use
-    | it locally or on staging only, as caught mail is never delivered.
+    | `catch` (or `SNIP_MAIL_CATCH=true`) catches every mail instead of
+    | sending it, whichever mailer the app picks, from any process (requests,
+    | artisan commands, queue workers), and shows it in the tab's Inbox.
+    | `MAIL_MAILER=snip` does the same for the default mailer only. Use either
+    | locally or on staging only: caught mail is never delivered.
     |
     */
 
     'mail' => [
         'enabled' => env('SNIP_MAIL', false),
+        'catch' => env('SNIP_MAIL_CATCH', false),
     ],
 
     /*

@@ -179,11 +179,12 @@
             </div>
         </div>
         <div class="row">
-            <span class="row__name" id="mail-label">Mail<span class="row__hint">Mail the request sent; off shows the setup steps</span></span>
+            <span class="row__name" id="mail-label">Mail<span class="row__hint"><code>SNIP_MAIL</code> / <code>SNIP_MAIL_CATCH</code>; off shows the setup steps</span></span>
             <div class="options" role="radiogroup" aria-labelledby="mail-label">
                 <label><input type="radio" name="mail" value="off"> Off</label>
-                <label><input type="radio" name="mail" value="empty" checked> Empty</label>
-                <label><input type="radio" name="mail" value="filled"> Filled</label>
+                <label><input type="radio" name="mail" value="request" checked> This request</label>
+                <label><input type="radio" name="mail" value="inbox"> Inbox</label>
+                <label><input type="radio" name="mail" value="both"> Both</label>
             </div>
         </div>
         <div class="row">
@@ -200,6 +201,9 @@
                 <label><input type="radio" name="inertia" value="off" checked> Off</label>
                 <label><input type="radio" name="inertia" value="on"> On</label>
             </div>
+        </div>
+        <div id="inbox-actions" class="visits" hidden>
+            <button type="button" id="catch-mail">Catch a mail from a queue job</button>
         </div>
         <div id="visits" class="visits" hidden>
             <button type="button" id="load-deferred">Load deferred props</button>
@@ -373,6 +377,62 @@
         });
     });
 
+    /*
+     * A stand-in for the app's /_snip/mail endpoint: the panel fetches the inbox list, opens one mail,
+     * and empties the inbox through it. The button adds a mail, as a queue worker would; the open
+     * inbox picks it up on its next check, within 5 seconds.
+     */
+    const INBOX_URL = '/_snip/mail';
+    let inboxSeq = 0;
+    const inbox = [];
+
+    function catchMail(subject, origin, minutesAgo) {
+        const sample = SAMPLES.mails[inboxSeq % SAMPLES.mails.length];
+        const mail = {
+            ...sample,
+            id: `mail-${++inboxSeq}`,
+            subject,
+            origin,
+            sent_at: new Date(Date.now() - minutesAgo * 60000).toISOString(),
+        };
+        delete mail.time_ms;
+        inbox.unshift(mail);
+    }
+
+    catchMail('Reset your password', 'POST /forgot-password', 42);
+    catchMail('Your order #1042 has shipped', 'artisan horizon:work', 7);
+    catchMail('Daily sales report', 'artisan reports:daily', 1);
+
+    const realFetch = window.fetch.bind(window);
+    const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+    window.fetch = async (input, init = {}) => {
+        const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
+        if (!path.startsWith(INBOX_URL)) return realFetch(input, init);
+
+        if ((init.method ?? 'GET') === 'DELETE') {
+            inbox.length = 0;
+            return json({ mails: [] });
+        }
+
+        const id = path.slice(INBOX_URL.length + 1);
+        if (id) {
+            const mail = inbox.find((m) => m.id === id);
+            return mail ? json(mail) : json({ message: 'This mail is no longer in the inbox.' }, 404);
+        }
+
+        return json({
+            mails: inbox.map((m) => ({
+                id: m.id, subject: m.subject, to: [...m.to, ...m.cc, ...m.bcc],
+                sent_at: m.sent_at, origin: m.origin, attachments: m.attachments.length,
+            })),
+        });
+    };
+
+    document.getElementById('catch-mail').addEventListener('click', () => {
+        catchMail(`Order #${1042 + inboxSeq} confirmation`, 'artisan horizon:work', 0);
+    });
+
     const form = document.getElementById('controls');
 
     function render() {
@@ -381,9 +441,13 @@
             snips: pick('snips') === 'filled' ? SAMPLES.snips : [],
             timings: pick('timings') === 'filled' ? SAMPLES.timings : [],
             milestones: pick('milestones') === 'filled' ? SAMPLES.milestones : [],
-            mails: pick('mail') === 'filled' ? SAMPLES.mails : [],
+            mails: ['request', 'both'].includes(pick('mail')) ? SAMPLES.mails : [],
             profile: pick('profiler') === 'off' ? null : profile(pick('profiler') === 'filled'),
-            config: { datalayer: false, mail: pick('mail') !== 'off' },
+            config: {
+                datalayer: false,
+                mail: ['request', 'both'].includes(pick('mail')),
+                mail_inbox_url: ['inbox', 'both'].includes(pick('mail')) ? INBOX_URL : null,
+            },
         };
 
         // The panel reads its payload and the initial Inertia page once on mount, so swap in fresh elements.
@@ -397,6 +461,7 @@
             document.body.appendChild(pageEl);
         }
         document.getElementById('visits').hidden = !inertiaPage;
+        document.getElementById('inbox-actions').hidden = !payload.config.mail_inbox_url;
         updateVisitButtons();
 
         document.querySelector('laravel-snip')?.remove();
@@ -404,7 +469,7 @@
         el.setAttribute('data-payload', JSON.stringify(payload));
         document.body.appendChild(el);
 
-        const empty = !payload.snips.length && !payload.timings.length && !payload.milestones.length && !payload.mails.length && !payload.profile && !inertiaPage;
+        const empty = !payload.snips.length && !payload.timings.length && !payload.milestones.length && !payload.mails.length && !payload.config.mail_inbox_url && !payload.profile && !inertiaPage;
         document.getElementById('hidden-note').hidden = !empty;
     }
 

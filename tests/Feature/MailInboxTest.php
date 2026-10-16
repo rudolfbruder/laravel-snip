@@ -51,6 +51,32 @@ it('names the request that sent the mail', function () {
     expect(app(MailInbox::class)->summaries()[0]['origin'])->toBe('POST /__snip-test/checkout');
 });
 
+it('catches mail from every mailer with snip.mail.catch, so it is never sent', function () {
+    config()->set('mail.default', 'array');
+    config()->set('snip.mail.catch', true);
+
+    // Apps that pick a mailer per mail, like a shop sending through its own SMTP account.
+    Mail::mailer('array')->raw('Hi', fn ($message) => $message->to('jane@example.com')->subject('Brand mail'));
+
+    expect(app('mail.manager')->mailer('array')->getSymfonyTransport()->messages())->toHaveCount(0)
+        ->and(app(MailInbox::class)->summaries()[0]['subject'])->toBe('Brand mail')
+        ->and(app(MailInbox::class)->enabled())->toBeTrue();
+});
+
+it('also shows caught mail among the request\'s own mail', function () {
+    config()->set('snip.mail.enabled', true);
+
+    Route::get('/__snip-test/caught-page', function () {
+        Mail::raw('Hi', fn ($message) => $message->to('jane@example.com')->subject('Caught here'));
+
+        return response('<html><body>page</body></html>')->header('Content-Type', 'text/html');
+    });
+
+    $data = snipPayloadFrom($this->get('/__snip-test/caught-page')->getContent());
+
+    expect($data['mails'][0]['subject'])->toBe('Caught here');
+});
+
 it('leaves mail sent through other mailers out of the inbox', function () {
     Mail::mailer('array')->raw('Hi', fn ($message) => $message->to('jane@example.com'));
 

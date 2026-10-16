@@ -679,7 +679,7 @@ const cacheKeyCount = computed<number>(
 );
 
 const totalCount = computed<number>(
-    () => entries.value.length + timings.value.length + milestones.value.length + mails.value.length + (profile.value !== null ? 1 : 0) + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0) + (inertiaPage.value !== null ? 1 : 0),
+    () => entries.value.length + timings.value.length + milestones.value.length + mails.value.length + (profile.value !== null ? 1 : 0) + customDataLayerCount.value + cacheKeyCount.value + (queueEnabled.value ? 1 : 0) + (mailInboxUrl.value !== null ? 1 : 0) + (inertiaPage.value !== null ? 1 : 0),
 );
 
 const hasContent = computed<boolean>(() => totalCount.value > 0);

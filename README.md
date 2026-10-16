@@ -260,13 +260,17 @@ Off by default; turn it on with `SNIP_MAIL=true`.
 
 #### Catching mail instead of sending it
 
-Set `MAIL_MAILER=snip` and the app's mail goes to the panel instead of anyone's inbox — like Mailpit or Mailtrap, without running anything. It works for every process: requests, `php artisan` commands and queue workers. The Mail tab gets an **Inbox** view that lists the newest 50 caught mails (kept for 24 hours in the default cache store), checks for new ones every few seconds while it is open, and has a button to empty it.
+Set `SNIP_MAIL_CATCH=true` and the app's mail goes to the panel instead of anyone's inbox — like Mailpit or Mailtrap, without running anything. Every mail is caught, whichever mailer sends it (`Mail::mailer('shop_sk')` included), from every process: requests, `php artisan` commands and queue workers. The Mail tab gets an **Inbox** view that lists the newest 50 caught mails (kept for 24 hours in the default cache store) with when and what sent them, checks for new ones every few seconds while it is open, and has a button to empty it.
 
 ```dotenv
-MAIL_MAILER=snip
+SNIP_MAIL_CATCH=true
 ```
 
-The `snip` mailer is added for you; there is nothing to put in `config/mail.php`. Use it locally or on staging only: mail sent through it is never delivered, and everyone who passes the gate can read every caught mail, password-reset links included.
+Queue workers read the config once, when they start: restart them afterwards (`php artisan queue:restart`, or `php artisan horizon:terminate` with Horizon), or the mail they send still goes out. The workers and the web app must share a cache store other than `array`.
+
+`MAIL_MAILER=snip` catches the default mailer's mail only; the `snip` mailer is added for you, with nothing to put in `config/mail.php`.
+
+Use either locally or on staging only: caught mail is never delivered, and everyone who passes the gate can read every caught mail, password-reset links included. With the default `display_mode`, the panel only appears on pages that captured something; set `SNIP_DISPLAY_MODE=always` to reach the inbox from any page.
 
 When neither is switched on, the Mail tab shows these setup steps.
 

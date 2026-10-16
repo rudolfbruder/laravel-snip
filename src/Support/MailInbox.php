@@ -13,7 +13,7 @@ use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Support\Str;
 
 /**
- * Mail caught by the `snip` transport, kept in the application cache so every process can add to it
+ * Mail caught instead of sent, kept in the application cache so every process can add to it
  * and the panel can read it: a request, an artisan command and a queue worker all share one inbox.
  *
  * Each mail lives under its own key and the index holds a short summary of the newest ones, so the
@@ -37,16 +37,27 @@ class MailInbox
         protected ConfigRepository $config,
     ) {}
 
-    /** Whether the app sends its mail through the `snip` transport by default, so the panel shows the inbox. */
+    /** Whether the app's mail is caught, so the panel shows the inbox. */
     public function enabled(): bool
     {
-        return (bool) $this->config->get('snip.enabled', true)
-            && $this->catches((string) $this->config->get('mail.default'));
+        return $this->catches((string) $this->config->get('mail.default'));
     }
 
-    /** Whether the named mailer delivers into this inbox. */
+    /**
+     * Whether mail sent through the named mailer is caught: every mailer's with `snip.mail.catch` on,
+     * else only a mailer using the `snip` transport (`MAIL_MAILER=snip`). Apps that pick a mailer per
+     * mail, such as `Mail::mailer('shop_sk')`, need the former.
+     */
     public function catches(?string $mailer): bool
     {
+        if (! $this->config->get('snip.enabled', true)) {
+            return false;
+        }
+
+        if ($this->config->get('snip.mail.catch', false)) {
+            return true;
+        }
+
         return $mailer !== null
             && $mailer !== ''
             && $this->config->get("mail.mailers.{$mailer}.transport") === SnipMailTransport::NAME;
