@@ -4,6 +4,8 @@ All notable changes to `laravel-snip` will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.5] - 2026-10-16
+
 ### Added
 - A `snip` mailer that catches mail instead of sending it. Set `MAIL_MAILER=snip` and every mail — from requests, artisan commands and queue workers — lands in a new **Inbox** view of the Mail tab instead of anyone's inbox. The newest 50 are kept for 24 hours in the default cache store; the view checks for new mail every few seconds and can be emptied. Meant for local and staging use.
 - The Mail tab is always shown. When mail capture is off it explains how to turn on `SNIP_MAIL` and the `snip` mailer.
